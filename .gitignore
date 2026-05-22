@@ -1,0 +1,57 @@
+# ── Secrets & environment ─────────────────────────────────────────────────────
+.env
+*.env
+
+# ── Excluded modules (private / in development) ───────────────────────────────
+container.py
+generator.py
+interpreter.py
+verification.py
+
+# ── Training, datasets & fine-tuning ─────────────────────────────────────────
+dataset/
+*.jsonl
+selene_finetune.py
+prepare_dataset.py
+
+# ── Private content & runtime state ──────────────────────────────────────────
+selene_matrix.txt
+manifest
+processed.txt
+conversations/
+selene_state.json
+errors.log
+notes/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.Python
+
+# ── Node / Electron ───────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# ── Electron build output ─────────────────────────────────────────────────────
+out/
+dist/
+release/
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.exe
+*.msi
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,17 @@
+# Core AI / LLM
+openai
+pynput
+python-dotenv
+
+# Selene Server (new)
+fastapi
+uvicorn[standard]
+websockets
+
+# Training / dataset (existing)
+torch
+transformers
+datasets
+accelerate
+trl
+unsloth

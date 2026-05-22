@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src ws://localhost:8765 http://localhost:8765;">
+<title>SELENE OS · v0.1 · 2026</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+/* ── Reset & Variables ─────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07051a;
+  --pink:#e040a0;--pink-dim:rgba(224,64,160,.5);--pink-glow:rgba(224,64,160,.25);
+  --cyan:#4dd9f7;--cyan-dim:rgba(77,217,247,.4);
+  --green:#4ade80;--red:#f87171;--amber:#fbbf24;
+  --purple:#c084fc;
+  --text:#ddd0f8;--text-dim:rgba(200,185,240,.55);--text-faint:rgba(160,145,200,.35);
+  --border-p:rgba(224,64,160,.55);
+  --mono:'Share Tech Mono','Courier New',monospace;
+  --orb:'Orbitron',sans-serif;
+}
+html,body,#root{width:100%;height:100%;overflow:hidden;background:var(--bg)}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--pink-dim);border-radius:2px}
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+@keyframes pinkPulse{0%,100%{box-shadow:0 0 12px var(--pink-glow),inset 0 0 10px rgba(224,64,160,.06)}50%{box-shadow:0 0 28px var(--pink-glow),inset 0 0 18px rgba(224,64,160,.12)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
+@keyframes msgIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+@keyframes msgInRight{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+@keyframes dotPulse{0%,80%,100%{transform:scale(0);opacity:.4}40%{transform:scale(1);opacity:1}}
+@keyframes connPulse{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes clockColon{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* ── Root / atmosphere ─────────────────────────────────────────────────────── */
+.selene-root{font-family:var(--mono);color:var(--text);width:100vw;height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden;background:var(--bg)}
+.atmo-blob{position:absolute;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:0}
+.atmo-1{width:500px;height:500px;background:radial-gradient(circle,#4b1b7a,transparent 70%);top:10%;left:-5%;opacity:.35}
+.atmo-2{width:380px;height:380px;background:radial-gradient(circle,#0f2a5a,transparent 70%);top:40%;right:-4%;opacity:.4}
+.atmo-3{width:280px;height:280px;background:radial-gradient(circle,#6b1040,transparent 70%);top:5%;right:22%;opacity:.3}
+.atmo-4{width:220px;height:220px;background:radial-gradient(circle,#1a0a4a,transparent 70%);bottom:5%;left:30%;opacity:.4}
+.scanlines{position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.04) 3px,rgba(0,0,0,.04) 4px);pointer-events:none;z-index:999}
+.scanline-sweep{position:fixed;left:0;right:0;height:80px;background:linear-gradient(transparent,rgba(255,255,255,.012),transparent);pointer-events:none;z-index:998;animation:scanline 6s linear infinite}
+
+/* ── Top Bar ───────────────────────────────────────────────────────────────── */
+.top-bar{position:relative;z-index:10;display:flex;align-items:center;gap:12px;padding:6px 14px;border-bottom:1px solid var(--border-p);background:rgba(7,5,26,.88);backdrop-filter:blur(8px);flex-shrink:0;-webkit-app-region:drag}
+.top-bar *{-webkit-app-region:no-drag}
+.logo-btn{border:1px dashed var(--pink-dim);padding:3px 10px;color:var(--pink);background:transparent;font-family:var(--mono);font-size:10px;letter-spacing:.12em;cursor:pointer;transition:all .15s}
+.logo-btn:hover{border-color:var(--pink);box-shadow:0 0 8px var(--pink-glow)}
+.top-dot{color:var(--pink);font-size:7px}
+.top-title{font-family:var(--orb);color:var(--purple);font-size:15px;letter-spacing:.28em;font-weight:600;text-shadow:0 0 14px rgba(192,132,252,.5)}
+.top-os{color:var(--text-dim);letter-spacing:.16em;font-size:11px}
+.top-sep{width:1px;height:14px;background:rgba(255,255,255,.08);flex-shrink:0}
+.top-menu-item{display:flex;align-items:center;gap:4px;color:var(--cyan);font-size:11px;letter-spacing:.1em}
+.top-ce{color:var(--text-faint);font-size:10px;letter-spacing:.07em}
+.top-spacer{flex:1}
+
+/* Clock */
+.clock-module{display:flex;flex-direction:column;align-items:flex-end;border:1px solid rgba(77,217,247,.2);padding:2px 10px;background:rgba(7,5,26,.5);min-width:92px}
+.clock-time{font-size:13px;letter-spacing:.08em;color:var(--cyan);line-height:1.2;font-family:var(--mono)}
+.clock-time .colon{animation:clockColon 1s step-end infinite}
+.clock-date{font-size:8px;letter-spacing:.12em;color:var(--text-faint);line-height:1.2}
+
+/* Connection */
+.conn-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:background .4s}
+.conn-dot.online{background:var(--green);box-shadow:0 0 5px var(--green);animation:connPulse 2s ease-in-out infinite}
+.conn-dot.offline{background:var(--red);box-shadow:0 0 5px var(--red)}
+.conn-dot.connecting{background:var(--amber);animation:connPulse .8s ease-in-out infinite}
+.conn-label{font-size:9px;letter-spacing:.1em;color:var(--text-faint)}
+
+/* Window controls */
+.win-controls{display:flex;gap:5px}
+.win-btn{width:12px;height:12px;border-radius:50%;border:none;cursor:pointer;transition:opacity .15s;padding:0}
+.win-btn:hover{opacity:.75}
+.win-btn.close{background:var(--red)}
+.win-btn.min{background:var(--amber)}
+.win-btn.max{background:var(--green)}
+.opt-btn{border:1px solid rgba(148,163,184,.3);padding:2px 11px;color:rgba(148,163,184,.7);background:transparent;font-family:var(--mono);font-size:10px;letter-spacing:.1em;cursor:pointer;transition:all .15s}
+.opt-btn:hover{border-color:var(--cyan-dim);color:var(--cyan)}
+
+/* ── Main Layout ───────────────────────────────────────────────────────────── */
+.main-wrap{flex:1;display:flex;overflow:hidden;position:relative;z-index:5}
+
+/* ── Left Panel ────────────────────────────────────────────────────────────── */
+.left-panel{width:230px;min-width:230px;display:flex;flex-direction:column;border-right:1px solid rgba(224,64,160,.15);padding:12px;gap:8px}
+.cam-frame{flex:1;border:1px solid var(--border-p);position:relative;background:rgba(224,64,160,.02);overflow:hidden}
+.cam-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 40%,rgba(180,60,120,.06),transparent 60%)}
+.cam-dot{position:absolute;top:10px;left:10px;width:5px;height:5px;background:var(--pink);border-radius:50%;box-shadow:0 0 6px var(--pink);animation:blink 2.5s ease-in-out infinite}
+.cam-corner{position:absolute;width:8px;height:8px;border-color:var(--pink-dim);border-style:solid;border-width:0}
+.cam-corner.tl{top:4px;left:4px;border-top-width:1px;border-left-width:1px}
+.cam-corner.tr{top:4px;right:4px;border-top-width:1px;border-right-width:1px}
+.cam-corner.bl{bottom:4px;left:4px;border-bottom-width:1px;border-left-width:1px}
+.cam-corner.br{bottom:4px;right:4px;border-bottom-width:1px;border-right-width:1px}
+.cam-vrm-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--text-faint);font-size:9px;letter-spacing:.15em;pointer-events:none}
+.cam-vrm-label span{display:block;font-size:18px;margin-bottom:6px;opacity:.25}
+.cam-status{position:absolute;bottom:0;left:0;right:0;padding:10px;font-size:9px;color:rgba(224,100,160,.6);line-height:1.7;letter-spacing:.05em;background:linear-gradient(transparent,rgba(7,5,26,.75))}
+
+/* ── Center Panel ──────────────────────────────────────────────────────────── */
+.center-panel{flex:1;display:flex;flex-direction:column;align-items:center;padding:18px 24px 12px;overflow-y:auto;min-height:0}
+.entering-wrap{width:100%;max-width:520px;margin-bottom:10px;flex-shrink:0}
+.entering-label{font-size:9px;letter-spacing:.25em;color:var(--text-faint);margin-bottom:2px;text-transform:uppercase}
+.select-star{font-size:14px;letter-spacing:.1em;color:var(--text-dim)}
+.select-star em{color:var(--pink);font-style:normal}
+
+/* Grid deco */
+.grid-deco{position:relative;width:190px;margin:6px auto 18px;flex-shrink:0}
+.grid-row{display:flex;gap:7px;margin-bottom:7px}
+.gbox{width:82px;height:56px;border:1px dashed rgba(77,217,247,.3);position:relative;transition:border-color .2s}
+.gbox.solid{border-style:solid;border-color:rgba(77,217,247,.5)}
+.gbox.active-box{border-color:var(--pink-dim);box-shadow:0 0 8px rgba(224,64,160,.15)}
+.sp-mark{position:absolute;font-size:12px;line-height:1;filter:drop-shadow(0 0 4px currentColor);color:var(--pink)}
+.sp-tl{top:-7px;left:-7px}.sp-tr{top:-7px;right:-7px}.sp-bl{bottom:-7px;left:-7px}.sp-br{bottom:-7px;right:-7px}
+.sp-cyan{color:var(--cyan)}
+
+/* Menu list */
+.menu-list{width:100%;max-width:520px;display:flex;flex-direction:column;gap:5px}
+.menu-item{display:flex;align-items:center;padding:12px 18px;border:1px solid rgba(77,217,247,.18);background:rgba(12,10,32,.65);cursor:pointer;transition:all .13s ease;letter-spacing:.18em;font-size:13px;color:var(--text-dim);user-select:none;outline:none}
+.menu-item:hover,.menu-item.nav-sel{border-color:rgba(77,217,247,.5);background:rgba(18,14,56,.9);color:var(--text)}
+.menu-item.nav-sel .mi-spark{color:var(--cyan)}
+.menu-item.active-item{border-color:var(--border-p);background:linear-gradient(90deg,rgba(224,64,160,.09),rgba(12,10,40,.85));color:#fff;animation:pinkPulse 2.2s ease-in-out infinite}
+.menu-item.active-item .mi-spark{color:var(--pink)}
+.menu-item.active-item.nav-sel{border-color:var(--pink);box-shadow:0 0 18px var(--pink-glow)}
+.mi-spark{margin-right:12px;font-size:11px;color:rgba(77,217,247,.45);transition:color .15s}
+.mi-close{margin-left:auto;color:var(--pink-dim);font-size:14px}
+
+/* ── Shared content panel header ───────────────────────────────────────────── */
+.cv-back-btn{border:1px solid var(--border-p);background:transparent;color:var(--pink);font-family:var(--mono);font-size:11px;letter-spacing:.1em;padding:4px 10px;cursor:pointer;transition:all .15s;flex-shrink:0}
+.cv-back-btn:hover{background:var(--pink-glow)}
+.cv-title{font-family:var(--orb);font-size:14px;letter-spacing:.2em;color:var(--text);text-shadow:0 0 16px var(--pink-dim)}
+
+/* ── CHAT VIEW ─────────────────────────────────────────────────────────────── */
+.chat-view{width:100%;max-width:560px;display:flex;flex-direction:column;flex:1;animation:fadeIn .2s ease;min-height:0}
+.chat-view-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-shrink:0}
+.chat-offline-notice{font-size:10px;color:var(--red);letter-spacing:.1em;margin-left:auto;padding:2px 8px;border:1px solid rgba(248,113,113,.3)}
+.chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 8px;min-height:0}
+.chat-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;color:var(--text-faint);font-size:10px;letter-spacing:.15em;text-align:center}
+.chat-empty-star{font-size:26px;opacity:.18;animation:blink 3s ease-in-out infinite}
+.msg-row{display:flex;flex-direction:column;gap:2px;animation:msgIn .2s ease}
+.msg-row.user-row{align-items:flex-end;animation-name:msgInRight}
+.msg-label{font-size:8px;letter-spacing:.15em;color:var(--text-faint);padding:0 4px}
+.msg-bubble{max-width:88%;padding:8px 12px;font-size:11px;line-height:1.65;letter-spacing:.04em}
+.msg-bubble.selene{border:1px solid rgba(77,217,247,.22);background:rgba(12,10,38,.8);color:var(--text-dim);border-radius:0 8px 8px 8px}
+.msg-bubble.user{border:1px solid var(--border-p);background:rgba(224,64,160,.07);color:var(--text);border-radius:8px 0 8px 8px;text-align:right}
+.typing-row{display:flex;align-items:center;gap:10px;padding:4px 2px}
+.typing-label{font-size:9px;color:var(--text-faint);letter-spacing:.12em}
+.typing-dots{display:flex;gap:4px;align-items:center}
+.typing-dot{width:5px;height:5px;border-radius:50%;background:var(--cyan);animation:dotPulse 1.4s ease-in-out infinite}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+.chat-input-row{display:flex;gap:6px;align-items:center;margin-top:8px;flex-shrink:0}
+.chat-input{background:rgba(18,14,44,.8);border:1px solid rgba(77,217,247,.22);color:var(--text);font-family:var(--mono);font-size:11px;letter-spacing:.05em;padding:6px 12px;outline:none;transition:border-color .15s;width:100%}
+.chat-input::placeholder{color:var(--text-faint)}
+.chat-input:focus{border-color:rgba(77,217,247,.5)}
+.chat-input:disabled{opacity:.4;cursor:not-allowed}
+.send-btn{background:rgba(18,80,100,.55);border:1px solid rgba(77,217,247,.35);color:var(--cyan);height:32px;padding:0 12px;cursor:pointer;font-size:13px;transition:all .15s;font-family:var(--mono)}
+.send-btn:hover{background:rgba(18,80,100,.85)}
+.send-btn:disabled{opacity:.3;cursor:not-allowed}
+.clear-btn{background:transparent;border:1px solid rgba(224,64,160,.25);color:var(--pink-dim);height:32px;padding:0 10px;cursor:pointer;font-family:var(--mono);font-size:9px;letter-spacing:.1em;transition:all .15s;white-space:nowrap}
+.clear-btn:hover{border-color:var(--pink-dim);color:var(--pink)}
+
+/* ── NOTEPAD VIEW ──────────────────────────────────────────────────────────── */
+.notepad-view{width:100%;max-width:560px;display:flex;flex-direction:column;flex:1;animation:fadeIn .2s ease;min-height:0;gap:8px}
+.notepad-header{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.notepad-title-input{flex:1;background:rgba(18,14,44,.7);border:1px solid rgba(224,64,160,.3);color:var(--text);font-family:var(--mono);font-size:12px;letter-spacing:.08em;padding:6px 12px;outline:none;transition:border-color .15s}
+.notepad-title-input::placeholder{color:var(--text-faint)}
+.notepad-title-input:focus{border-color:var(--pink-dim)}
+.notepad-save-btn{background:rgba(224,64,160,.12);border:1px solid var(--border-p);color:var(--pink);font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:6px 14px;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.notepad-save-btn:hover{background:var(--pink-glow)}
+.notepad-save-btn:disabled{opacity:.35;cursor:not-allowed}
+.notepad-body{display:flex;flex:1;gap:8px;min-height:0}
+.notepad-textarea{flex:1;background:rgba(10,8,28,.7);border:1px solid rgba(77,217,247,.18);color:var(--text);font-family:var(--mono);font-size:11px;letter-spacing:.04em;line-height:1.7;padding:14px;outline:none;resize:none;transition:border-color .15s;min-height:0}
+.notepad-textarea::placeholder{color:var(--text-faint)}
+.notepad-textarea:focus{border-color:rgba(77,217,247,.4)}
+.notes-sidebar{width:160px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.notes-sidebar-label{font-size:8px;letter-spacing:.2em;color:var(--text-faint);margin-bottom:4px;flex-shrink:0}
+.note-entry{padding:7px 10px;border:1px solid rgba(77,217,247,.12);background:rgba(12,10,32,.6);cursor:pointer;transition:all .12s;font-size:9px;letter-spacing:.07em;color:var(--text-dim);display:flex;flex-direction:column;gap:2px}
+.note-entry:hover{border-color:rgba(77,217,247,.35);color:var(--text)}
+.note-entry.active-note{border-color:var(--border-p);background:rgba(224,64,160,.07);color:var(--text)}
+.note-entry-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:9px}
+.note-entry-date{font-size:7px;color:var(--text-faint)}
+.note-delete-btn{background:transparent;border:none;color:rgba(248,113,113,.4);cursor:pointer;font-size:10px;padding:0;line-height:1;margin-left:auto;transition:color .15s;flex-shrink:0}
+.note-delete-btn:hover{color:var(--red)}
+.notepad-status{font-size:9px;letter-spacing:.1em;flex-shrink:0;height:16px}
+.notepad-status.ok{color:rgba(74,222,128,.7)}
+.notepad-status.err{color:var(--red)}
+
+/* ── QUIT VIEW ─────────────────────────────────────────────────────────────── */
+.quit-view{width:100%;max-width:520px;display:flex;flex-direction:column;gap:14px;animation:fadeIn .2s ease}
+.quit-header{display:flex;align-items:center;gap:12px}
+.quit-panel{border:1px solid var(--border-p);background:rgba(12,10,32,.75);padding:24px;display:flex;flex-direction:column;gap:16px;position:relative}
+.quit-panel::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 20% 30%,rgba(224,64,160,.06),transparent 60%);pointer-events:none}
+.quit-warn{border:1px solid rgba(224,64,160,.4);padding:12px 16px;font-size:11px;color:var(--pink-dim);letter-spacing:.08em;line-height:1.8}
+.quit-actions{display:flex;gap:10px}
+.quit-confirm-btn{border:1px solid var(--border-p);background:rgba(224,64,160,.12);color:var(--pink);font-family:var(--mono);font-size:11px;letter-spacing:.14em;padding:9px 22px;cursor:pointer;transition:all .15s}
+.quit-confirm-btn:hover{background:rgba(224,64,160,.25);box-shadow:0 0 12px var(--pink-glow)}
+.quit-cancel-btn{border:1px solid rgba(77,217,247,.25);background:transparent;color:var(--text-dim);font-family:var(--mono);font-size:11px;letter-spacing:.14em;padding:9px 22px;cursor:pointer;transition:all .15s}
+.quit-cancel-btn:hover{border-color:rgba(77,217,247,.5);color:var(--text)}
+
+/* ── Generic content view ──────────────────────────────────────────────────── */
+.content-view{width:100%;max-width:520px;animation:fadeIn .2s ease;display:flex;flex-direction:column;gap:14px}
+.cv-header{display:flex;align-items:center;gap:12px}
+.cv-panel{border:1px solid var(--border-p);background:rgba(12,10,32,.7);padding:22px;position:relative;display:flex;flex-direction:column;gap:14px;min-height:180px}
+.cv-panel::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 20% 30%,rgba(224,64,160,.05),transparent 60%);pointer-events:none}
+.cv-sub{font-size:11px;color:var(--text-dim);letter-spacing:.07em;line-height:1.75}
+.cv-cursor{animation:blink 1s step-end infinite;color:var(--pink)}
+.cv-data-row{display:flex;gap:8px;align-items:center;font-size:10px;color:var(--text-faint);letter-spacing:.1em}
+.cv-data-label{color:var(--cyan-dim)}
+.cv-btn{border:1px solid var(--border-p);background:transparent;color:var(--pink);font-family:var(--mono);font-size:11px;letter-spacing:.12em;padding:8px 20px;cursor:pointer;transition:all .15s;align-self:flex-start}
+.cv-btn:hover{background:var(--pink-glow)}
+
+/* ── Right Panel ───────────────────────────────────────────────────────────── */
+.right-panel{width:290px;min-width:290px;border-left:1px solid rgba(77,217,247,.1);display:flex;flex-direction:column;padding:14px 16px;gap:14px}
+.selene-hdr{display:flex;align-items:center;gap:6px;font-size:12px;letter-spacing:.2em;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.05)}
+.selene-hdr-name{color:var(--text)}
+.selene-hdr-dots{color:rgba(77,217,247,.35);letter-spacing:5px}
+.selene-hdr-status{font-size:10px;letter-spacing:.12em;margin-left:auto;transition:color .4s}
+.selene-hdr-status.idle{color:var(--text-faint)}
+.selene-hdr-status.writing{color:var(--cyan);animation:connPulse 1.5s ease-in-out infinite}
+.chat-display-label{border:1px solid rgba(77,217,247,.28);padding:5px 13px;font-size:11px;letter-spacing:.14em;color:var(--cyan);display:inline-block;margin-bottom:8px}
+.chat-opts{font-size:10px;color:var(--text-faint);letter-spacing:.1em;display:flex;gap:14px}
+.chat-opt{cursor:pointer;transition:color .15s}
+.chat-opt:hover{color:var(--text-dim)}
+.chat-opt.on{color:var(--cyan)}
+.right-info-block{flex:1;border:1px dashed rgba(77,217,247,.1);padding:12px;font-size:9px;color:var(--text-faint);line-height:2;letter-spacing:.07em;overflow-y:auto}
+.ri-label{color:var(--cyan);font-size:9px;letter-spacing:.15em;margin-bottom:4px;display:block}
+.ri-val{color:var(--text-dim)}
+.energy-bar-bg{height:3px;background:rgba(77,217,247,.08);width:100%;overflow:hidden;margin:2px 0 6px}
+.energy-bar-fill{height:100%;background:linear-gradient(90deg,var(--pink),var(--cyan));transition:width .6s ease}
+
+/* ── Bottom Bar ────────────────────────────────────────────────────────────── */
+.bottom-bar{position:relative;z-index:10;display:flex;align-items:center;gap:14px;padding:5px 14px;border-top:1px solid rgba(224,64,160,.18);background:rgba(7,5,26,.93);backdrop-filter:blur(6px);flex-shrink:0}
+.sys-block{font-size:9px;line-height:1.7;letter-spacing:.05em}
+.sys-block.pink{color:rgba(224,100,160,.55)}
+.sys-block.teal{color:rgba(77,217,247,.42)}
+.bottom-spacer{flex:1}
+.bb-input-wrap{display:flex;gap:5px;align-items:center}
+.bb-input{background:rgba(18,14,44,.8);border:1px solid rgba(77,217,247,.2);color:var(--text);font-family:var(--mono);font-size:11px;letter-spacing:.05em;padding:5px 12px;width:185px;outline:none;transition:border-color .15s}
+.bb-input::placeholder{color:var(--text-faint)}
+.bb-input:focus{border-color:rgba(77,217,247,.45)}
+.icon-btn{background:rgba(18,80,100,.5);border:1px solid rgba(77,217,247,.3);color:var(--cyan);width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;transition:all .15s;font-family:var(--mono)}
+.icon-btn:hover{background:rgba(18,80,100,.85)}
+
+/* ── Footer Nav ────────────────────────────────────────────────────────────── */
+.footer-nav{position:relative;z-index:10;display:flex;align-items:center;gap:16px;padding:2px 14px;background:rgba(7,5,22,.96);border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
+.fnav-hint{display:flex;align-items:center;gap:4px;font-size:8px;color:var(--text-faint);letter-spacing:.08em}
+.fnav-circle{width:14px;height:14px;border-radius:50%;border:1px solid rgba(200,185,240,.3);display:flex;align-items:center;justify-content:center;font-size:7px;color:rgba(200,185,240,.5)}
+.fnav-cross{width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(200,185,240,.45);border:1px solid rgba(200,185,240,.25)}
+.fnav-l2{background:rgba(77,217,247,.1);border:1px solid rgba(77,217,247,.28);color:var(--cyan);font-size:8px;padding:1px 5px;letter-spacing:.05em}
+.footer-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.footer-session{font-size:7px;color:var(--text-faint);letter-spacing:.07em}
+.footer-ver{font-size:7px;color:rgba(77,217,247,.3);letter-spacing:.07em}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLOCK MODULE
+// Observable time source. Exposed globally as window.seleneTime for future
+// Selene integration (mood/lighting triggers, scheduled events, etc.)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function useClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = new Date();
+      setNow(t);
+      // Global observable — Selene can read this without React coupling
+      window.seleneTime = {
+        timestamp:  t.getTime(),
+        iso:        t.toISOString(),
+        time:       t.toLocaleTimeString("en-US", { hour12: false }),
+        date:       t.toLocaleDateString("en-US",  { year:"numeric", month:"2-digit", day:"2-digit" }),
+        hour:       t.getHours(),
+        minute:     t.getMinutes(),
+        second:     t.getSeconds(),
+        dayOfWeek:  t.getDay(),      // 0 = Sunday
+      };
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+function ClockDisplay({ now }) {
+  const h  = String(now.getHours()).padStart(2, "0");
+  const m  = String(now.getMinutes()).padStart(2, "0");
+  const s  = String(now.getSeconds()).padStart(2, "0");
+  const yr = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, "0");
+  const d  = String(now.getDate()).padStart(2, "0");
+
+  return (
+    <div className="clock-module" title="CHRON://LOCAL">
+      <span className="clock-time">
+        {h}<span className="colon">:</span>{m}<span className="colon">:</span>{s}
+      </span>
+      <span className="clock-date">{yr}·{mo}·{d}</span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WEBSOCKET HOOK
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const WS_URL       = "ws://localhost:8765/ws";
+const RECONNECT_MS = 3000;
+
+function useSeleneWS({ onMessage }) {
+  const wsRef    = useRef(null);
+  const retryRef = useRef(null);
+  const [connState, setConnState] = useState("connecting");
+
+  const connect = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState < 2) return;
+    setConnState("connecting");
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+    ws.onopen    = ()  => { setConnState("online");  clearTimeout(retryRef.current); };
+    ws.onclose   = ()  => { setConnState("offline"); retryRef.current = setTimeout(connect, RECONNECT_MS); };
+    ws.onerror   = ()  => ws.close();
+    ws.onmessage = (e) => { try { onMessage(JSON.parse(e.data)); } catch(_){} };
+  }, [onMessage]);
+
+  useEffect(() => {
+    connect();
+    return () => { clearTimeout(retryRef.current); wsRef.current?.close(); };
+  }, [connect]);
+
+  const send = useCallback((payload) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN)
+      wsRef.current.send(JSON.stringify(payload));
+  }, []);
+
+  return { connState, send };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOTEPAD VIEW
+// Saves plaintext files to notes/ folder via Electron IPC (window.seleneBridge)
+// Falls back to a "download" approach if not running inside Electron.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function NotepadView({ onBack }) {
+  const [title,    setTitle]    = useState("");
+  const [content,  setContent]  = useState("");
+  const [notes,    setNotes]    = useState([]);
+  const [active,   setActive]   = useState(null);   // currently loaded note filename
+  const [status,   setStatus]   = useState(null);   // { msg, type: 'ok'|'err' }
+  const hasElectron = !!window.seleneBridge?.saveNote;
+
+  // Load note list on mount
+  useEffect(() => { refreshList(); }, []);
+
+  const refreshList = async () => {
+    if (!hasElectron) return;
+    const res = await window.seleneBridge.listNotes();
+    if (res.ok) setNotes(res.files);
+  };
+
+  const showStatus = (msg, type = "ok") => {
+    setStatus({ msg, type });
+    setTimeout(() => setStatus(null), 2500);
+  };
+
+  const handleSave = async () => {
+    if (!content.trim()) { showStatus("nothing to save", "err"); return; }
+    const filename = title.trim() || `note_${Date.now()}`;
+
+    if (hasElectron) {
+      const res = await window.seleneBridge.saveNote(filename, content);
+      if (res.ok) {
+        setActive(res.filename);
+        showStatus(`saved → ${res.filename}`);
+        refreshList();
+      } else {
+        showStatus(res.error || "save failed", "err");
+      }
+    } else {
+      // Browser fallback — trigger download
+      const blob = new Blob([content], { type: "text/plain" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${filename}.txt`;
+      a.click();
+      showStatus("downloaded (browser mode)");
+    }
+  };
+
+  const handleLoad = async (filename) => {
+    if (!hasElectron) return;
+    const res = await window.seleneBridge.loadNote(filename);
+    if (res.ok) {
+      setContent(res.content);
+      setTitle(filename.replace(/\.txt$/, ""));
+      setActive(filename);
+    } else {
+      showStatus(res.error || "load failed", "err");
+    }
+  };
+
+  const handleDelete = async (e, filename) => {
+    e.stopPropagation();
+    if (!hasElectron) return;
+    const res = await window.seleneBridge.deleteNote(filename);
+    if (res.ok) {
+      if (active === filename) { setContent(""); setTitle(""); setActive(null); }
+      refreshList();
+      showStatus("deleted");
+    } else {
+      showStatus(res.error || "delete failed", "err");
+    }
+  };
+
+  const handleNew = () => { setContent(""); setTitle(""); setActive(null); };
+
+  const fmtDate = (ms) => new Date(ms).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"2-digit"});
+
+  return (
+    <div className="notepad-view">
+      <div className="notepad-header">
+        <button className="cv-back-btn" onClick={onBack}>← BACK</button>
+        <div className="cv-title">NOTEPAD</div>
+        <button className="cv-back-btn" style={{marginLeft:"auto"}} onClick={handleNew}>+ NEW</button>
+      </div>
+
+      <div className="notepad-header" style={{gap:6}}>
+        <input
+          className="notepad-title-input"
+          placeholder="note title..."
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+        />
+        <button className="notepad-save-btn" onClick={handleSave} disabled={!content.trim()}>
+          SAVE ✦
+        </button>
+      </div>
+
+      <div className="notepad-body">
+        <textarea
+          className="notepad-textarea"
+          placeholder={"begin writing...\n\npure text, saved to notes/ folder"}
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          spellCheck={false}
+        />
+
+        {/* Sidebar: saved notes list */}
+        <div className="notes-sidebar">
+          <div className="notes-sidebar-label">SAVED NOTES</div>
+          {!hasElectron && (
+            <div style={{fontSize:8,color:"var(--amber)",letterSpacing:".08em",lineHeight:1.6}}>
+              ELECTRON ONLY<br/>browser mode = download
+            </div>
+          )}
+          {notes.length === 0 && hasElectron && (
+            <div style={{fontSize:8,color:"var(--text-faint)",letterSpacing:".1em"}}>
+              no notes yet
+            </div>
+          )}
+          {notes.map(n => (
+            <div
+              key={n.filename}
+              className={`note-entry${active === n.filename ? " active-note" : ""}`}
+              onClick={() => handleLoad(n.filename)}
+            >
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <span className="note-entry-name">{n.filename.replace(/\.txt$/, "")}</span>
+                <button className="note-delete-btn" onClick={(e) => handleDelete(e, n.filename)}>×</button>
+              </div>
+              <span className="note-entry-date">{fmtDate(n.modified)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className={`notepad-status${status ? " " + status.type : ""}`}>
+        {status ? `[ ${status.msg} ]` : ""}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUIT VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function QuitView({ onCancel }) {
+  const handleQuit = () => {
+    if (window.seleneBridge?.closeWindow) {
+      window.seleneBridge.closeWindow();
+    } else {
+      // Browser fallback
+      window.close();
+    }
+  };
+
+  return (
+    <div className="quit-view">
+      <div className="quit-header">
+        <button className="cv-back-btn" onClick={onCancel}>← BACK</button>
+        <div className="cv-title">SYSTEM SHUTDOWN</div>
+      </div>
+      <div className="quit-panel">
+        <div className="quit-warn">
+          ⚠ SHUTDOWN SEQUENCE INITIATED<br/><br/>
+          All active processes will be suspended.<br/>
+          Memory state will be preserved to MEM.CARD slot 1.<br/>
+          Selene's creative chronicles will be auto-saved.
+        </div>
+        <div style={{fontSize:10,color:"var(--text-faint)",letterSpacing:".1em"}}>
+          Are you sure you want to exit?
+        </div>
+        <div className="quit-actions">
+          <button className="quit-confirm-btn" onClick={handleQuit}>
+            CONFIRM SHUTDOWN
+          </button>
+          <button className="quit-cancel-btn" onClick={onCancel}>
+            CANCEL
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHAT VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function TypingIndicator() {
+  return (
+    <div className="typing-row">
+      <span className="typing-label">Selene</span>
+      <div className="typing-dots">
+        <div className="typing-dot"/><div className="typing-dot"/><div className="typing-dot"/>
+      </div>
+    </div>
+  );
+}
+
+function ChatView({ messages, isThinking, connState, onBack, onSend, onClear }) {
+  const bottomRef = useRef(null);
+  const [draft, setDraft] = useState("");
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages, isThinking]);
+
+  const submit = () => {
+    const txt = draft.trim();
+    if (!txt || connState !== "online") return;
+    onSend(txt);
+    setDraft("");
+  };
+
+  return (
+    <div className="chat-view">
+      <div className="chat-view-header">
+        <button className="cv-back-btn" onClick={onBack}>← BACK</button>
+        <div className="cv-title">CHAT / DISPLAY</div>
+        {connState !== "online" && (
+          <span className="chat-offline-notice">
+            {connState === "connecting" ? "CONNECTING..." : "SERVER OFFLINE"}
+          </span>
+        )}
+      </div>
+
+      <div className="chat-messages">
+        {messages.length === 0 && !isThinking ? (
+          <div className="chat-empty">
+            <span className="chat-empty-star">✦</span>
+            <span>SESSION READY</span>
+            <span style={{fontSize:"8px",letterSpacing:".1em",marginTop:4}}>
+              {connState === "online" ? "SELENE IS LISTENING" : "WAITING FOR SERVER..."}
+            </span>
+          </div>
+        ) : (
+          <>
+            {messages.map((m, i) => (
+              <div key={i} className={`msg-row${m.role==="user"?" user-row":""}`}>
+                <span className="msg-label">{m.role === "user" ? "YOU" : "SELENE"}</span>
+                <div className={`msg-bubble ${m.role==="user"?"user":"selene"}`}>{m.content}</div>
+              </div>
+            ))}
+            {isThinking && <TypingIndicator/>}
+            <div ref={bottomRef}/>
+          </>
+        )}
+      </div>
+
+      <div className="chat-input-row">
+        <input
+          className="chat-input"
+          placeholder={connState==="online" ? "type or speak..." : "server offline..."}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); submit(); }}}
+          disabled={connState !== "online"}
+        />
+        <button className="send-btn" onClick={submit} disabled={connState!=="online" || !draft.trim()}>→</button>
+        <button className="clear-btn" onClick={onClear}>/new</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GENERIC CONTENT VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const MENU_ITEMS = [
+  { id:"games",   label:"GAMES",         content:"GAME LIBRARY",    sub:"No active cartridges detected. Insert module to continue." },
+  { id:"room",    label:"SELENE'S ROOM", content:"PERSONAL SPACE",  sub:"Memory fragments loading · Mood index: CALM · Layer: PRIVATE" },
+  { id:"chat",    label:"CHAT",          content:"CHAT / DISPLAY",  sub:null },
+  { id:"mem",     label:"MEM. CARD",     content:"MEMORY CARD",     sub:"Slots: 4 · Used: 1 · Free: 3 · Last write: SESSION.001" },
+  { id:"notepad", label:"NOTEPAD",       content:"NOTEPAD",         sub:null },
+  { id:"quit",    label:"QUIT",          content:"SYSTEM SHUTDOWN", sub:null },
+];
+
+function ContentView({ item, onBack }) {
+  return (
+    <div className="content-view">
+      <div className="cv-header">
+        <button className="cv-back-btn" onClick={onBack}>← BACK</button>
+        <div className="cv-title">{item.content}</div>
+      </div>
+      <div className="cv-panel">
+        <div className="cv-sub">{item.sub} <span className="cv-cursor">█</span></div>
+        <div className="cv-data-row">
+          <span className="cv-data-label">MODULE:</span>
+          <span style={{color:"rgba(200,185,240,.6)"}}>{item.id.toUpperCase()}.SYS</span>
+          <span className="cv-data-label" style={{marginLeft:16}}>STATUS:</span>
+          <span style={{color:"rgba(77,217,247,.7)"}}>READY</span>
+        </div>
+        <button className="cv-btn" onClick={onBack}>ENTER {item.label}</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYOUT SUB-COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function TopBar({ connState, now }) {
+  const dotCls = connState === "online" ? "online" : connState === "connecting" ? "connecting" : "offline";
+  const close    = () => window.seleneBridge?.closeWindow();
+  const minimize = () => window.seleneBridge?.minimizeWindow();
+  const maximize = () => window.seleneBridge?.maximizeWindow();
+
+  return (
+    <div className="top-bar">
+      <div className="win-controls">
+        <button className="win-btn close"  onClick={close}    title="Close"/>
+        <button className="win-btn min"    onClick={minimize} title="Minimize"/>
+        <button className="win-btn max"    onClick={maximize} title="Maximize"/>
+      </div>
+      <button className="logo-btn">[ LOGO ]</button>
+      <span className="top-dot">●</span>
+      <span className="top-title">SELENE</span>
+      <span className="top-os">OS</span>
+      <div className="top-sep"/>
+      <div className="top-menu-item">
+        <span className="top-dot">●</span>
+        <span style={{letterSpacing:".1em",fontSize:"11px",color:"rgba(77,217,247,.8)"}}>menu</span>
+        <span>✦</span>
+      </div>
+      <div className="top-sep"/>
+      <span className="top-ce"><span style={{marginRight:3}}>×</span>CE [std.around]</span>
+      <div className="top-spacer"/>
+      <div className={`conn-dot ${dotCls}`}/>
+      <span className="conn-label">
+        {connState === "online" ? "ONLINE" : connState === "connecting" ? "..." : "OFFLINE"}
+      </span>
+      <ClockDisplay now={now}/>
+      <button className="opt-btn">OPT</button>
+    </div>
+  );
+}
+
+function LeftPanel() {
+  return (
+    <div className="left-panel">
+      <div className="cam-frame">
+        <div className="cam-dot"/>
+        <div className="cam-corner tl"/><div className="cam-corner tr"/>
+        <div className="cam-corner bl"/><div className="cam-corner br"/>
+        {/* ── VRM placeholder — replace with <canvas id="vrm-canvas"> when three-vrm is wired ── */}
+        <div className="cam-vrm-label">
+          <span>◈</span>VRM<br/>PENDING
+        </div>
+        <div className="cam-status">
+          SYS://SELENE.VRM · PENDING<br/>
+          CAM_00 · RT_OUTPUT · 60FPS<br/>
+          MOOD:IDLE · LAYER:ISOLATED<br/>
+          CHRON://SESSION.001
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GridDecoration({ activeIdx }) {
+  return (
+    <div className="grid-deco">
+      <div className="grid-row">
+        <div className={`gbox solid${activeIdx===0?" active-box":""}`}>
+          <span className="sp-mark sp-tl">✦</span>
+          <span className="sp-mark sp-br sp-cyan">✦</span>
+        </div>
+        <div className={`gbox${activeIdx===1?" active-box":""}`} style={{borderStyle:"dashed"}}/>
+      </div>
+      <div className="grid-row">
+        <div className={`gbox${activeIdx===2?" active-box":""}`}/>
+        <div className={`gbox${activeIdx===3?" active-box":""}`} style={{borderStyle:"dashed"}}>
+          <span className="sp-mark sp-tr sp-cyan">✦</span>
+          <span className="sp-mark sp-bl">✦</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MenuItem({ item, isNavSel, isActive, onClick, onMouseEnter }) {
+  const cls = ["menu-item", isActive?"active-item":"", isNavSel?"nav-sel":""].join(" ");
+  return (
+    <div className={cls} tabIndex={-1} onClick={onClick} onMouseEnter={onMouseEnter}>
+      <span className="mi-spark">✦</span>
+      {item.label}
+      {isActive && <span className="mi-close">×</span>}
+    </div>
+  );
+}
+
+function RightPanel({ seleneState, chatOpt, setChatOpt, activeItem }) {
+  const energy    = seleneState?.creative_energy ?? 0;
+  const memCount  = seleneState?.memory_count    ?? 0;
+  const isWriting = seleneState?.status === "writing";
+  const statusTxt = isWriting ? "writing" : (seleneState?.status ?? "offline");
+
+  return (
+    <div className="right-panel">
+      <div className="selene-hdr">
+        <span className="selene-hdr-name">SELENE</span>
+        <span className="selene-hdr-dots">· · ·</span>
+        <span className={`selene-hdr-status ${isWriting?"writing":"idle"}`}>{statusTxt}</span>
+      </div>
+      <div>
+        <div className="chat-display-label">[ CHAT / DISPLAY ]</div>
+        <div className="chat-opts">
+          {["options","memory","output"].map(o => (
+            <span key={o} className={`chat-opt${chatOpt===o?" on":""}`} onClick={()=>setChatOpt(o)}>{o}</span>
+          ))}
+        </div>
+      </div>
+      <div className="right-info-block">
+        <span className="ri-label">SYSTEM STATE</span>
+        <div><span style={{color:"var(--cyan-dim)",fontSize:9}}>STATUS: </span><span className="ri-val">{statusTxt.toUpperCase()}</span></div>
+        <div><span style={{color:"var(--cyan-dim)",fontSize:9}}>ENERGY: </span><span className="ri-val">{energy}/100</span></div>
+        <div className="energy-bar-bg"><div className="energy-bar-fill" style={{width:`${energy}%`}}/></div>
+        <div><span style={{color:"var(--cyan-dim)",fontSize:9}}>MEMORY: </span><span className="ri-val">{memCount} turn{memCount!==1?"s":""}</span></div>
+        <div style={{marginTop:8}}><span style={{color:"var(--cyan-dim)",fontSize:9}}>MODULE: </span><span className="ri-val">{activeItem.id.toUpperCase()}.SYS</span></div>
+        <div><span style={{color:"var(--cyan-dim)",fontSize:9}}>MODEL: </span><span className="ri-val">NEMOTRON-3-NANO</span></div>
+        <div><span style={{color:"var(--cyan-dim)",fontSize:9}}>BUILD: </span><span className="ri-val">V1.7 · 2026</span></div>
+      </div>
+    </div>
+  );
+}
+
+function FooterNav() {
+  return (
+    <div className="footer-nav">
+      <div className="fnav-hint"><div className="fnav-cross">×</div><span>Select</span></div>
+      <div className="fnav-hint"><div className="fnav-circle">○</div><span>Back</span></div>
+      <div className="fnav-hint"><div className="fnav-circle" style={{borderRadius:2}}>□</div><span>—</span></div>
+      <div className="fnav-hint"><div className="fnav-circle" style={{transform:"rotate(180deg)"}}>△</div><span>Info</span></div>
+      <div className="fnav-hint"><div className="fnav-l2">L2</div><span>♪ Mic</span></div>
+      <div className="fnav-hint"><span>⌂</span><span>Home</span></div>
+      <div className="footer-right">
+        <span className="footer-session">((C)) WORLD:SELENE_01 · SESSION:001</span>
+        <span className="footer-ver">v0.1 · 2026</span>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROOT COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SeleneOS() {
+  const now = useClock();   // ← clock drives top bar + window.seleneTime
+
+  const [navIdx,    setNavIdx]    = useState(2);
+  const [activeIdx, setActiveIdx] = useState(2);
+  const [view,      setView]      = useState("menu");
+  const [chatOpt,   setChatOpt]   = useState("options");
+
+  // Live server state
+  const [seleneState, setSeleneState] = useState(null);
+  const [messages,    setMessages]    = useState([]);
+  const [isThinking,  setIsThinking]  = useState(false);
+
+  const handleWsMessage = useCallback((msg) => {
+    switch (msg.type) {
+      case "connected": setSeleneState(msg.data);  break;
+      case "state":     setSeleneState(msg.data);  break;
+      case "thinking":  setIsThinking(true);       break;
+      case "response":
+        setIsThinking(false);
+        setMessages(p => [...p, { role:"assistant", content: msg.content }]);
+        break;
+      default: break;
+    }
+  }, []);
+
+  const { connState, send } = useSeleneWS({ onMessage: handleWsMessage });
+
+  const handleSend = useCallback((text) => {
+    setMessages(p => [...p, { role:"user", content: text }]);
+    send({ type:"chat", content: text });
+  }, [send]);
+
+  const handleClear = useCallback(() => {
+    setMessages([]);
+    send({ type:"clear_memory" });
+  }, [send]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const onKey = (e) => {
+      if (document.activeElement?.tagName === "INPUT")    return;
+      if (document.activeElement?.tagName === "TEXTAREA") return;
+      switch (e.key) {
+        case "ArrowUp":   e.preventDefault(); setNavIdx(p => p>0 ? p-1 : MENU_ITEMS.length-1); break;
+        case "ArrowDown": e.preventDefault(); setNavIdx(p => p<MENU_ITEMS.length-1 ? p+1 : 0); break;
+        case "Enter":
+          e.preventDefault();
+          if (view==="menu") { setActiveIdx(navIdx); setView(MENU_ITEMS[navIdx].id); }
+          break;
+        case "Escape":
+          if (view!=="menu") { e.preventDefault(); setView("menu"); }
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navIdx, view]);
+
+  const activate = (idx) => { setActiveIdx(idx); setView(MENU_ITEMS[idx].id); };
+  const goBack   = ()    => setView("menu");
+
+  // ── Center panel content ────────────────────────────────────────────────────
+  let centerContent;
+  if (view === "menu") {
+    centerContent = (
+      <>
+        <div className="entering-wrap">
+          <div className="entering-label">ENTERING</div>
+          <div className="select-star">Select<em>*</em> »</div>
+        </div>
+        <GridDecoration activeIdx={navIdx % 4}/>
+        <div className="menu-list">
+          {MENU_ITEMS.map((item, i) => (
+            <MenuItem key={item.id} item={item}
+              isNavSel={i===navIdx} isActive={i===activeIdx}
+              onClick={()=>activate(i)} onMouseEnter={()=>setNavIdx(i)}/>
+          ))}
+        </div>
+      </>
+    );
+  } else if (view === "chat") {
+    centerContent = (
+      <ChatView
+        messages={messages} isThinking={isThinking}
+        connState={connState} onBack={goBack}
+        onSend={handleSend} onClear={handleClear}
+      />
+    );
+  } else if (view === "notepad") {
+    centerContent = <NotepadView onBack={goBack}/>;
+  } else if (view === "quit") {
+    centerContent = <QuitView onCancel={goBack}/>;
+  } else {
+    centerContent = (
+      <>
+        <div className="entering-wrap">
+          <div className="entering-label">ACTIVE MODULE</div>
+          <div className="select-star">{MENU_ITEMS[activeIdx].label}<em>*</em></div>
+        </div>
+        <ContentView item={MENU_ITEMS[activeIdx]} onBack={goBack}/>
+      </>
+    );
+  }
+
+  return (
+    <div className="selene-root">
+      <div className="atmo-blob atmo-1"/><div className="atmo-blob atmo-2"/>
+      <div className="atmo-blob atmo-3"/><div className="atmo-blob atmo-4"/>
+      <div className="scanlines"/><div className="scanline-sweep"/>
+
+      <TopBar connState={connState} now={now}/>
+
+      <div className="main-wrap">
+        <LeftPanel/>
+        <div className="center-panel">{centerContent}</div>
+        <RightPanel
+          seleneState={seleneState} chatOpt={chatOpt}
+          setChatOpt={setChatOpt}   activeItem={MENU_ITEMS[activeIdx]}
+        />
+      </div>
+
+      {/* Global bottom bar */}
+      <div className="bottom-bar">
+        <div className="sys-block pink">
+          SYS://SELENE.VRM · PENDING<br/>
+          CAM_00 · RT_OUTPUT · 60FPS
+        </div>
+        <div className="bottom-spacer"/>
+        <div className="sys-block teal">
+          SYS://SHELL.ACTIVE · PAD_01<br/>
+          SELENE_OS · BUILD_2026 · V1.7
+        </div>
+        <div className="bb-input-wrap">
+          <input
+            className="bb-input"
+            placeholder="quick message..."
+            onKeyDown={e => {
+              if (e.key==="Enter" && e.target.value.trim() && connState==="online") {
+                handleSend(e.target.value.trim());
+                e.target.value = "";
+                setActiveIdx(2); setView("chat");
+              }
+            }}
+          />
+          <button className="icon-btn" title="Voice">♪</button>
+          <button className="icon-btn" title="Open chat"
+            onClick={()=>{ setActiveIdx(2); setView("chat"); }}>→</button>
+        </div>
+      </div>
+
+      <FooterNav/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SeleneOS/>);
+</script>
+</body>
+</html>

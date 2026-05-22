@@ -1,0 +1,16 @@
+{
+  "name": "selene-os",
+  "version": "0.1.0",
+  "description": "Selene OS — local AI companion interface",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev":   "electron . --dev"
+  },
+  "keywords": ["selene", "ai", "electron"],
+  "author": "Ghost",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^42.2.0"
+  }
+}
