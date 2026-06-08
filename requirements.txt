@@ -1,5 +1,5 @@
 # Core AI / LLM
-openai
+httpx
 pynput
 python-dotenv
 
@@ -14,4 +14,8 @@ transformers
 datasets
 accelerate
 trl
-unsloth
+
+# Media Tools Integration (Batch 3)
+youtube-transcript-api
+pymupdf
+pymupdf4llm

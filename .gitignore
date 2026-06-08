@@ -2,26 +2,67 @@
 .env
 *.env
 
+# ── Personal / private content ────────────────────────────────────────────────
+configs/soul.md
+configs/sage_soul.md
+memories/
+conversations/
+selene_state.json
+notes/
+manifest
+selene_matrix.txt
+processed.txt
+
+# ── Runtime logs ──────────────────────────────────────────────────────────────
+boot.log
+boot_err.log
+boot_unbuf.log
+boot_unbuf_err.log
+errors.log
+*.log
+
+# ── Training data & fine-tuning ───────────────────────────────────────────────
+dataset/
+*.jsonl
+scripts/prepare_dataset.py
+scripts/selene_finetune.py
+
+# ── Frontend (Electron + React) ───────────────────────────────────────────────
+renderer/
+electron/
+sounds/
+
+# ── Third-party API wrappers (not novel) ─────────────────────────────────────
+tools/notion.py
+tools/spotify.py
+tools/maps.py
+tools/hass.py
+tools/youtube.py
+tools/document.py
+tools/workspace.py
+
+# ── Side features / experiments ───────────────────────────────────────────────
+selene_discord.py
+scratch/
+tools/Experiments/
+selene_brain/dormant/
+selene_brain/story_engine.py
+selene_brain/lip_sync.py
+
+# ── Redundant / draft docs ────────────────────────────────────────────────────
+SKILLS_PROFILE.md
+SKILLS_PROFILE_UNIFIED.md
+SKILLS_ADDENDUM_UNITY_VRM.md
+
 # ── Excluded modules (private / in development) ───────────────────────────────
 container.py
 generator.py
 interpreter.py
 verification.py
 
-# ── Training, datasets & fine-tuning ─────────────────────────────────────────
-dataset/
-*.jsonl
-selene_finetune.py
+# ── Training scripts ──────────────────────────────────────────────────────────
 prepare_dataset.py
-
-# ── Private content & runtime state ──────────────────────────────────────────
-selene_matrix.txt
-manifest
-processed.txt
-conversations/
-selene_state.json
-errors.log
-notes/
+selene_finetune.py
 
 # ── Python ────────────────────────────────────────────────────────────────────
 venv/
@@ -51,7 +92,13 @@ release/
 *.exe
 *.msi
 
+# ── SQLite databases ──────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
+*.winmd

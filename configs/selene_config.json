@@ -1,0 +1,25 @@
+{
+  "name": "Selene",
+  "title": "The Voice",
+  "domain": "Communication, Interpretation, Emotional Continuity, and Daily Habits",
+  "model": "google/gemma-3n-e4b",
+  "tools": [
+    "memory_tool",
+    "status_checker",
+    "schedule_manager",
+    "youtube",
+    "notion",
+    "knowledge_manager",
+    "maps",
+    "runereader",
+    "meta_insight",
+    "todo",
+    "manifest_manager"
+  ],
+  "memory_path": "memories/selene_memory.db",
+  "prompt_path": "configs/selene_prompt.txt",
+  "user_profile_path": "user_profile.md",
+  "character_profile_path": "character_profile.md",
+  "tools_context_path": "tools_context.md",
+  "notion_page_id": "selene_core_page"
+}
