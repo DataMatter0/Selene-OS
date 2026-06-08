@@ -15,7 +15,10 @@ To add a new tool:
 
 import logging
 
-from .builtin      import ChronicleTool, MemoryTool, StatusTool, ManifestTool, TodoTool
+from .memory_tool  import ChronicleTool, MemoryTool
+from .status       import StatusTool
+from .manifest     import ManifestTool
+from .todo         import TodoTool
 from .meta_insight import MetaInsightTool
 from .knowledge import KnowledgeTool
 from .file_manager import LocalWorkspaceTool

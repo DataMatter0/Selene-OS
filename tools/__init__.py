@@ -5,8 +5,11 @@ Public surface:
     from tools import ToolRouter, register_all_tools
 
 Internal modules:
-    schema    — BaseTool, ToolGroup, ToolRouter, atomic_write
-    builtin   — ChronicleTool, MemoryTool, StatusTool, ManifestTool
+    schema       — BaseTool, ToolGroup, ToolRouter, atomic_write
+    memory_tool  — ChronicleTool, MemoryTool
+    status       — StatusTool
+    manifest     — ManifestTool
+    todo         — TodoTool
     knowledge — KnowledgeTool
     document  — DocumentTool
     workspace — GoogleWorkspaceTool
