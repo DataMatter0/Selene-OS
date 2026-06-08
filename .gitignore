@@ -5,6 +5,10 @@
 # ── Personal / private content ────────────────────────────────────────────────
 configs/soul.md
 configs/sage_soul.md
+configs/selene_prompt.txt
+configs/sage_prompt.txt
+configs/sage_tools_context.md
+configs/selene_tools_context.md
 memories/
 conversations/
 selene_state.json
