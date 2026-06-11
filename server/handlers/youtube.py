@@ -1,5 +1,14 @@
 """
-server/handlers/youtube.py — YouTube co-watching and search
+server/handlers/youtube.py -- YouTube co-watching and search
+
+Sections
+--------
+  QUERY        youtube_query          -- ad-hoc tool execute (transcript fetch etc.)
+  SEARCH       youtube_search         -- fast video search path
+  WATCH        youtube_watch_start    -- fetch + split transcript into segments
+  SEGMENT      youtube_segment_push   -- autonomous per-segment reaction engine
+                                         (presence / dormancy / observe modes)
+  CHAT         youtube_chat           -- in-player direct chat with video context
 """
 
 import asyncio

@@ -1,5 +1,16 @@
 """
-server/handlers/story.py — Infinity Sim / Infinite Story Engine handlers
+server/handlers/story.py -- Infinity Sim / Infinite Story Engine handlers
+
+Sections
+--------
+  PROFILES      story_get_profiles, story_add_profile
+  PRESETS       story_get_presets, story_save_preset
+  CHARACTERS    story_get_characters, story_create_character,
+                story_generate_random_character
+  CAMPAIGN      story_start_campaign, story_player_action (+ auto-compaction),
+                story_regenerate_dm, story_save_game, story_resume_campaign
+  MERCHANT      story_merchant_inventory, story_buy_item
+  LEVELLING     story_level_up
 """
 
 import json
@@ -17,6 +28,7 @@ async def handle(websocket, data: dict, loop) -> bool:
     if not msg_type.startswith("story_"):
         return False
 
+    # -- PROFILES ---------------------------------------------------------------
     if msg_type == "story_get_profiles":
         from tools.story_engine.db_helper import get_db_connection
         conn = get_db_connection()
@@ -49,6 +61,7 @@ async def handle(websocket, data: dict, loop) -> bool:
                 conn.close()
         return True
 
+    # -- PRESETS ----------------------------------------------------------------
     elif msg_type == "story_get_presets":
         from tools.story_engine.db_helper import get_db_connection
         conn = get_db_connection()
@@ -81,6 +94,7 @@ async def handle(websocket, data: dict, loop) -> bool:
                 conn.close()
         return True
 
+    # -- CHARACTERS -------------------------------------------------------------
     elif msg_type == "story_get_characters":
         from tools.story_engine.db_helper import get_db_connection
         profile_name = data.get("profile_name", "").strip()
@@ -195,6 +209,7 @@ RULES FOR STATS:
             await websocket.send_json({"type": "error", "message": f"Failed to generate random character: {e}"})
         return True
 
+    # -- CAMPAIGN ---------------------------------------------------------------
     elif msg_type == "story_start_campaign":
         if selene is None:
             return True
@@ -419,6 +434,7 @@ RULES FOR STATS:
             await websocket.send_json({"type": "error", "message": f"DM call failed: {e}"})
         return True
 
+    # -- MERCHANT ---------------------------------------------------------------
     elif msg_type == "story_merchant_inventory":
         from selene_brain.story_engine import InfiniteStoryEngine
         location_name = data.get("location_name", "Origin Outpost")
@@ -458,6 +474,7 @@ RULES FOR STATS:
             conn.close()
         return True
 
+    # -- LEVELLING --------------------------------------------------------------
     elif msg_type == "story_level_up":
         from selene_brain.story_engine import InfiniteStoryEngine
         char_id       = data.get("character_id")

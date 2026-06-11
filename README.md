@@ -36,31 +36,57 @@ Most local AI projects are thin frontends over an LLM API. Selene OS is an opera
 ## Project structure
 
 ```
-selene_brain/          Core agent architecture
-  llm_chat.py          Main LLMChat class — chat loop, agent swap, presence gate
-  llm_caller.py        LM Studio API client, reasoning_content normalization
-  lm_studio_manager.py Model load/unload, skip logic for shared-model agents
-  prompter.py          System prompt builder — soul + context + emotional state
-  agent_memory.py      SQLite layer — dialog, meta_insight, tool_reasoning logs
-  memory_extractor.py  Background memory extraction + working memory management
+selene_brain/               Core agent architecture
+  llm_chat.py               Main LLMChat class — chat loop, agent swap, presence gate
+  llm_caller.py             LM Studio API client, reasoning_content normalization
+  lm_studio_manager.py      Model load/unload, skip logic for shared-model agents
+  prompter.py               System prompt builder — soul + context + emotional state
+  agent_memory.py           SQLite layer — dialog, meta_insight, tool_reasoning logs
+  memory_extractor.py       Background memory extraction + working memory management
   trajectory_compressor.py  Conversation compaction for long-context management
   conversation_manager.py   Conversation persistence and chunk storage
-  mood_observer.py     Emotional state tracker
-  tool_suggestion.py   Phrase matching + LLM gate for autonomous tool routing
+  mood_observer.py          Emotional state tracker
+  tool_suggestion.py        Phrase matching + LLM gate for autonomous tool routing
 
 tools/
-  schema.py            BaseTool interface
-  registry.py          ToolRouter — registration and routing
-  builtin.py           TodoTool, StatusTool, ScheduleManager
-  meta_insight.py      Self-observation — agents query their own reasoning logs
-  presence.py          Presence/gating tool
-  knowledge.py         Knowledge board (persistent context cards)
-  runereader.py        Document synthesis tool
-  file_manager.py      Local filesystem tool
+  schema.py           BaseTool interface + atomic_write helper
+  registry.py         ToolRouter — registration and routing
+  manifest.py         ManifestTool — task graph, Obsidian sync, LLM reorganize
+  todo.py             TodoTool — step-by-step plan tracker
+  memory_tool.py      ChronicleTool + MemoryTool
+  status.py           StatusTool — system health checks
+  meta_insight.py     Self-observation — agents query their own reasoning logs
+  presence.py         Presence/gating tool
+  knowledge.py        Knowledge board (persistent context cards)
+  runereader.py       Document synthesis tool
+  file_manager.py     Local filesystem tool
+  youtube.py          YouTube transcript + co-watching tool
+  maps.py             Maps tool
+  notion.py           Notion integration
+  schedule.py         Schedule manager
+  story_engine/       Infinite Story Engine (RPG campaign system)
 
-selene_server.py       FastAPI + WebSocket server, all WS message routing
-configs/               Agent config JSON + prompt files (soul files excluded)
-scripts/               Utility scripts (restore, patch, dataset parsing)
+server/                     WebSocket server package (extracted from selene_server.py)
+  config.py           BASE_URL, SERVER_HOST/PORT, _normalize()
+  utils.py            clean_xml_tags(), split_response_chunks(), _format_tool_data()
+  state.py            selene_ref, clients, broadcast(), get_state(), _state_broadcaster()
+  startup.py          _init_selene(), lifespan(), gamepad poller, timer poller
+  tool_pipeline.py    process_message(), update_memory_and_energy(), tool execution
+  handlers/
+    chat.py           chat, force_generate, rollback, clear_memory (presence layer)
+    conversations.py  new/load/rename/list/delete conversation
+    memory.py         get/save memory, force extract, tool phrase management
+    manifest.py       task CRUD, guidelines, reorganize, compile_and_push, todo
+    knowledge.py      knowledge board, web search, arXiv, RSS
+    system.py         state, models, set_model, toggle_agent, latency test, Discord
+    steam.py          Steam library scan + local game launcher
+    youtube.py        youtube query, search, watch_start, segment_push, co-watch chat
+    story.py          Infinite Story Engine (12 handlers, auto-compaction)
+    misc.py           maps, polymarket, document/RuneReader, notion, meta_insight
+
+selene_server.py      Thin entry point — FastAPI app, REST routes, WS dispatcher (~400 lines)
+configs/              Agent config JSON + prompt files (soul files gitignored)
+scripts/              Utility scripts (restore, patch, dataset parsing)
 ```
 
 ---
@@ -139,7 +165,7 @@ agent | tool_name | trigger_mode | input_context | tool_args | tool_result | rea
 
 ## Status
 
-Active development. v0.2 — multi-agent, presence layer, tool suggestion pipeline, chunk persistence, and training data collection are all live.
+Active development. v0.3 — codebase restructured into focused packages. `selene_server.py` reduced from 3541 → 406 lines. `tools/builtin.py` split into four single-responsibility modules. All server logic extracted into a `server/` package with one file per domain.
 
 Planned: fine-tuning pipeline on collected tool reasoning data, inner state stream, idle/interrupt model.
 

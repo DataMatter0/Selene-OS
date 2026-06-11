@@ -1,5 +1,15 @@
 """
-server/handlers/system.py — System state, model management, agent swap
+server/handlers/system.py -- System state, model management, agent swap
+
+Sections
+--------
+  STATE        get_state
+  MODELS       get_models, set_model (with already-loaded skip)
+  AGENT        toggle_agent, save_dashboard_layout
+  GAMEPAD      update_gamepad_config
+  DIAGNOSTICS  run_latency_test
+  DISCORD      get_discord_status, check_discord_connectivity
+  INTEGRATIONS get_integrations_status
 """
 
 import asyncio
@@ -57,7 +67,7 @@ async def handle(websocket, data: dict, loop) -> bool:
                     "type": "model_switch_status", "ok": True,
                     "model": new_path, "status": "already_loaded",
                 })
-                print(f"[Selene Server]: Model '{new_path}' already loaded — skipping reload.")
+                print(f"[Selene Server]: Model '{new_path}' already loaded -- skipping reload.")
                 return True
 
             instance_id = await loop.run_in_executor(None, manager.get_loaded_instance_id)
