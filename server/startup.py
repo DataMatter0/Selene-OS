@@ -138,22 +138,30 @@ def _init_selene() -> None:
             print("[Selene Server]: Server is offline or no model is loaded.")
 
         print(f"[Selene Server]: Attempting to load model -- {DESIRED_MODEL}")
-        if manager.load_model(DESIRED_MODEL):
-            active_path = DESIRED_MODEL
-            print(f"[Selene Server]: Model '{DESIRED_MODEL}' loaded successfully.")
-            time.sleep(5)
-        else:
-            print(f"[Selene Server]: Failed to load desired model '{DESIRED_MODEL}'.")
-            if loaded_path:
-                print(f"[Selene Server]: Using already loaded model as fallback -- {loaded_path}")
-                active_path = loaded_path
+        try:
+            if manager.load_model(DESIRED_MODEL):
+                active_path = DESIRED_MODEL
+                print(f"[Selene Server]: Model \'{DESIRED_MODEL}\' loaded successfully.")
+                time.sleep(5)
             else:
-                print("[Selene Server]: No model available. Chat disabled.")
-                return
+                print(f"[Selene Server]: Failed to load desired model \'{DESIRED_MODEL}\'.")
+                if loaded_path:
+                    print(f"[Selene Server]: Using already loaded model as fallback -- {loaded_path}")
+                    active_path = loaded_path
+                else:
+                    # LM Studio has nothing loaded — boot Selene in degraded mode
+                    # so manifest, memory, tools, and agent-switch still work.
+                    active_path = DESIRED_MODEL
+                    print(f"[Selene Server]: No model loaded. Booting in degraded mode with \'{active_path}\'.")
+        except Exception as load_exc:
+            print(f"[Selene Server]: load_model raised: {load_exc}")
+            active_path = loaded_path or DESIRED_MODEL
+            print(f"[Selene Server]: Booting in degraded mode with \'{active_path}\'.")
 
     if not active_path:
-        print("[Selene Server]: Could not determine an active model. Chat disabled.")
-        return
+        # Absolute last resort — should never reach here
+        active_path = DESIRED_MODEL
+        print(f"[Selene Server]: Falling back to configured model name \'{active_path}\' (degraded).")
 
     selene = LLMChat(base_url=BASE_URL, model_name=active_path)
     selene.is_running = True

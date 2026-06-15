@@ -139,8 +139,19 @@ async def handle(websocket, data: dict, loop) -> bool:
                     print(f"[Selene Server]: Observe think pass failed — {_obs_err}")
 
             if selene:
+                _obs_ts = time.time()
+                _agent  = getattr(selene, "active_agent_name", "selene").lower()
+                # Store both sides so working_memory stays alternating user/assistant.
+                # The assistant entry uses the observation thoughts if available,
+                # otherwise a placeholder so the model knows it silently observed.
+                _obs_memory = (
+                    f"[OBSERVED SILENTLY] {_obs_thoughts}"
+                    if _obs_thoughts
+                    else "[OBSERVED SILENTLY — no internal thoughts recorded]"
+                )
                 with selene.lock:
-                    selene.working_memory.append({"role": "user", "content": user_input, "ts": time.time()})
+                    selene.working_memory.append({"role": "user",      "content": user_input,   "ts": _obs_ts})
+                    selene.working_memory.append({"role": "assistant",  "content": _obs_memory,  "ts": _obs_ts, "agent": _agent})
                     window = selene.memory_window * 2
                     if len(selene.working_memory) > window:
                         selene.working_memory = selene.working_memory[-window:]
@@ -177,16 +188,25 @@ async def handle(websocket, data: dict, loop) -> bool:
         if selene:
             selene.thought_callback = handle_thought
 
+        _response_mode = choice.get("response_mode", "CONVERSATIONAL") if selene else "CONVERSATIONAL"
         t_llm_start = time.perf_counter()
         try:
-            response = await loop.run_in_executor(None, process_message, user_input)
+            response = await loop.run_in_executor(
+                None, lambda: process_message(user_input, response_mode=_response_mode)
+            )
         except Exception as exc:
             err_msg = f"[Selene Error]: LM Studio call failed -- {type(exc).__name__}: {exc}"
             print(err_msg)
-            await websocket.send_json({"type": "response", "content": err_msg})
-            await websocket.send_json({"type": "state",    "data": get_state()})
             if selene:
                 selene.thought_callback = None
+                # Save failed turn to working memory so it stays in context
+                import time as _t
+                _ts = _t.time()
+                with selene.lock:
+                    selene.working_memory.append({"role": "user", "content": user_input, "ts": _ts})
+                    selene.working_memory.append({"role": "assistant", "content": f"[ERROR] {type(exc).__name__}: {exc}", "ts": _ts})
+            await websocket.send_json({"type": "response", "content": err_msg})
+            await websocket.send_json({"type": "state",    "data": get_state()})
             return True
         llm_latency = (time.perf_counter() - t_llm_start) * 1000.0
 
@@ -222,10 +242,10 @@ async def handle(websocket, data: dict, loop) -> bool:
                     delay      = min(4.5, base_delay + char_delay)
                     await asyncio.sleep(delay)
                 await websocket.send_json({"type": "response", "content": chunk, "agent": active_agent_name})
-            update_memory_and_energy(user_input, response, chunks=chunks)
+            update_memory_and_energy(user_input, response, chunks=chunks, response_mode=_response_mode)
         else:
             await websocket.send_json({"type": "response", "content": cleaned_response, "agent": active_agent_name})
-            update_memory_and_energy(user_input, response)
+            update_memory_and_energy(user_input, response, response_mode=_response_mode)
 
         # Refresh emotion cache after turn
         if selene:
