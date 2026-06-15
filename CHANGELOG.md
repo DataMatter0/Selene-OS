@@ -96,6 +96,78 @@ The thin `selene_server.py` now only: wires FastAPI + CORS, registers REST route
 
 ---
 
+## [v0.4] 2026-06-15 — Presence Layer Expansion + Emotion Pipeline + Discord Parity
+
+### Added
+
+**Presence layer — full response mode routing**
+- Presence prompt always offers all three modes: RESPOND / REFLECT / INQUIRE. No `_low_confidence` gate hiding options.
+- Low-confidence nudge injected when mode is CONVERSATIONAL and `last_entropy > 1.5` — tells Selene it's okay to ask Ghost to clarify rather than guess.
+- `self._last_response_mode` stored post-presence for background threads to reference.
+
+**REFLECT sub-mode — reflective extraction**
+- When presence resolves to REFLECT, `reflective_turn=True` is passed to `maybe_extract_memory` and `update_memory_and_energy`.
+- `reflective_turn` flag bypasses `MIN_TRIAGE_CHARS` gate and biases triage classifier toward SELENE/INSIGHT categories.
+
+**INSIGHT triage category** (`selene_brain/memory_extractor.py`)
+- New category `"INSIGHT"` — ephemeral realizations or perspective shifts Selene works out during reflection.
+- Routed to `{agent}_insights.md` alongside standard memory files.
+- `_FILE_MAP["INSIGHT"]` and `_SECTION_DESC["INSIGHT"]` wired in; category included in classifier filter.
+
+**Insight folding at manifest compilation** (`selene_brain/llm_chat.py`)
+- `compile_daily_manifest` reads `{agent}_insights.md`, folds stable insights into `character_profile`, clears the insights file after folding.
+- Insights that accumulate across reflect turns become permanent character knowledge at next manifest compile.
+
+**Discord — full presence layer capacity** (`selene_discord.py`)
+- `run_choice_layer` called before every `process_message` in Discord.
+- IGNORE → sends `*— (no response) —*` soft notification, early return.
+- OBSERVE → sends `*— (observing) —*`, commits user turn to memory, early return.
+- RESPOND → full `process_message_fn` with `response_mode` forwarded.
+- `maybe_extract_memory` and `update_memory_fn` both receive `reflective_turn` derived from `response_mode`.
+
+**Discord chunking parity**
+- Discord now uses `split_response_chunks` (same 2–4 sentence grouping used by the UI) instead of single-message delivery.
+- Inter-chunk delay matches UI feel: `random.uniform(1.2, 2.8) + len(chunk) * 0.008`, capped at 4.5s.
+- `split_message` retained as safety fallback for chunks exceeding Discord's 2000-char limit.
+
+**Emotion pipeline — model visibility**
+- `get_mood_description` (`selene_brain/mood_observer.py`) now reports three signals per turn: dominant mood, immediate reaction, and largest last-turn emotional shift (direction + magnitude).
+- `last_applied` dict tracked on `MoodObserver`; shift entries with `|delta| > 0.04` surface in mood description.
+- `_build_turn_context` injects `<emotional_state>` block so the model sees live mood data every turn.
+
+**Emotion data in meta insight records**
+- `_after_chat_turn` consolidates emotion scoring + meta insight into a single `run_emotion_and_insight` background thread.
+- Meta insight records now carry real classified emotion data, not the previous placeholder `{"energy": ..., "status": "idle"}`.
+- Discord sessions tagged with `chat_response:discord` subcategory via `session_id.startswith("discord_")` detection.
+
+**Error recovery — working memory persistence**
+- On LLM error (both UI and Discord), the failed user turn and error string are appended to `working_memory` as a `user`/`assistant` pair.
+- No injection logic, no probe detection — the failed turn surfaces naturally in context when Ghost asks about it.
+
+### Changed
+
+- `update_memory_and_energy` signature now includes `response_mode: str = "CONVERSATIONAL"` — fixes `NameError` when called from background threads.
+- `start_loop` CLI path passes `reflective_turn=False` explicitly — resolves Pylance `_response_mode` undefined warning.
+- `last_entropy` comparison guarded with `(getattr(..., None) or 0.0) > 1.5` — resolves Pylance `None >` operator warning.
+- Removed `pending_reprompt` attribute from `startup.py` (no longer needed; working memory handles error context).
+- Removed `/reprompt` WebSocket handler from `server/handlers/chat.py`.
+- Removed probe-phrase detection and context-injection block from `selene_discord.py`.
+
+### Fixed
+
+- `NameError: name 'response_mode' is not defined` in `update_memory_and_energy` — variable was used but not in function scope.
+- `selene_discord.py` tail truncation during Edit tool use — reconstructed via bash append; mangled collision line patched via Python string replacement. Rule established: never use Edit/Write on large files; always use bash Python replacement + `ast.parse` verify.
+- Unicode em-dash (`—`) in source caused `assert OLD in src` failures — fixed by inspecting actual bytes with `repr()` then matching exactly.
+
+### Safe to commit
+- `selene_brain/llm_chat.py`, `selene_brain/memory_extractor.py`, `selene_brain/mood_observer.py`
+- `selene_discord.py` (gitignored — use `git add -f`)
+- `server/startup.py`, `server/tool_pipeline.py`, `server/handlers/chat.py`
+- `CHANGELOG.md`
+- Do NOT commit: `.env`, `configs/soul.md`, `configs/sage_soul.md`, `configs/selene_prompt.txt`, `configs/sage_prompt.txt`, `memories/`, `conversations/`, `selene_state.json`
+
+---
+
 ## Unreleased
 
 _Track in-progress work here. Move to a versioned block when committing._
