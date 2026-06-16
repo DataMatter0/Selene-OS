@@ -1,0 +1,23 @@
+{
+  "name": "Iris",
+  "title": "The Architect",
+  "domain": "Frontend Development, UI/UX, Component Design, and Visual Systems",
+  "model": "PLACEHOLDER",
+  "color": "#34d399",
+  "tools": [
+    "file_manager",
+    "manifest_manager",
+    "todo",
+    "status_checker",
+    "meta_insight",
+    "knowledge_manager"
+  ],
+  "memory_db": "memory.db",
+  "prompt_file": "prompt.txt",
+  "user_profile": "user_profile.md",
+  "character_profile": "character_profile.md",
+  "tools_context": "tools_context.md",
+  "insights": "insights.md",
+  "manifest_state": "manifest_state.json",
+  "notion_page_id": "iris_core_page"
+}

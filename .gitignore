@@ -106,3 +106,8 @@ release/
 Thumbs.db
 desktop.ini
 *.winmd
+
+# Agent memory cards — runtime/personal data
+agents/*/memory.db
+agents/*/prompt.txt
+agents/*/soul.md

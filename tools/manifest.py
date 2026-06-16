@@ -71,14 +71,10 @@ class ManifestTool(BaseTool):
     # ── State I/O ─────────────────────────────────────────────────────────────
 
     def load_state_json(self) -> dict:
-        active_agent = getattr(self.agent_state, "active_agent_name", "Selene").lower()
-        state_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_manifest_state.json")
+        # MEMORY_DIR is the agent folder — manifest_state.json lives directly inside it
+        state_path = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
         if not os.path.exists(state_path):
-            legacy_path = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
-            if active_agent == "sage" and os.path.exists(legacy_path):
-                state_path = legacy_path
-            else:
-                return {"tasks": [], "philosophies": []}
+            return {"tasks": [], "philosophies": []}
         try:
             with open(state_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -86,8 +82,7 @@ class ManifestTool(BaseTool):
             return {"tasks": [], "philosophies": []}
 
     def save_state_json(self, state: dict) -> None:
-        active_agent = getattr(self.agent_state, "active_agent_name", "Selene").lower()
-        state_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_manifest_state.json")
+        state_path = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
         try:
             with open(state_path, 'w', encoding='utf-8') as f:
                 json.dump(state, f, indent=2, ensure_ascii=False)
@@ -313,15 +308,9 @@ class ManifestTool(BaseTool):
     # ── Compilation & sync ────────────────────────────────────────────────────
 
     def compile_manifests(self) -> None:
-        active_agent = getattr(self.agent_state, "active_agent_name", "Selene").lower()
-        state_path   = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_manifest_state.json")
-        if not os.path.exists(state_path) and active_agent == "sage":
-            legacy_path = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
-            if os.path.exists(legacy_path):
-                state_path = legacy_path
-
-        dev_manifest_path  = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_development_manifest.md")
-        phil_manifest_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_philosophy_manifest.md")
+        state_path         = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
+        dev_manifest_path  = os.path.join(self.agent_state.MEMORY_DIR, "development_manifest.md")
+        phil_manifest_path = os.path.join(self.agent_state.MEMORY_DIR, "philosophy_manifest.md")
 
         if not os.path.exists(state_path):
             return

@@ -1,0 +1,27 @@
+{
+  "name": "Sage",
+  "title": "The Oracle",
+  "domain": "Research, Development, Backlog Orchestration, and Technical Synthesis",
+  "model": "google/gemma-3n-e4b",
+  "color": "#60a5fa",
+  "tools": [
+    "knowledge_manager",
+    "manifest_manager",
+    "todo",
+    "schedule_manager",
+    "status_checker",
+    "notion",
+    "maps",
+    "runereader",
+    "meta_insight",
+    "file_manager"
+  ],
+  "memory_db": "memory.db",
+  "prompt_file": "prompt.txt",
+  "user_profile": "user_profile.md",
+  "character_profile": "character_profile.md",
+  "tools_context": "tools_context.md",
+  "insights": "insights.md",
+  "manifest_state": "manifest_state.json",
+  "notion_page_id": "sage_core_page"
+}

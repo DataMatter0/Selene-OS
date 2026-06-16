@@ -1,0 +1,526 @@
+{
+  "tasks": [
+    {
+      "id": "T1",
+      "description": "Add sound effects and background music to the UI",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T3",
+      "description": "Fix Search tool tab blanking the UI when clikcled",
+      "priority": "A1",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T4",
+      "description": "Make cards easier to drag",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T5",
+      "description": "Curate emotional training dataset based on state values",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T6",
+      "description": "Curate the persona and scaffolding for the Creative model",
+      "priority": "A2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T7",
+      "description": "Fix bug where Selene cant respond in Youtube tab",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T8",
+      "description": "Add a dim lights feature to Youtube where the video and chat are still visible",
+      "priority": "C1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T9",
+      "description": "Investigate Selene's use of the Youtube Transcript",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T10",
+      "description": "Create a new feature that picks top videos based on multiple saved keywords based on recency and builds a homepage for Youtube. Also should feed into the related videos",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T11",
+      "description": "Scratch the Polymarket Tool",
+      "priority": "B1",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T12",
+      "description": "Instantiate HASS",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T13",
+      "description": "Verify Idea to project pipeline",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T14",
+      "description": "Resize UI elements based on resolution",
+      "priority": "B1",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T15",
+      "description": "Allow filtering and reordering of tasks",
+      "priority": "B1",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T16",
+      "description": "Build Youtube Music Tool with autonomous prompted singing on line with the lyric timing",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T17",
+      "description": "Playlist commands may be broken so build an auto pipeline based on related songs",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T18",
+      "description": "Allow task editing",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T19",
+      "description": "RSS feed needs installation and sources",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T20",
+      "description": "Combine the Search tool to be extensions of the Knowledge Board page",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T21",
+      "description": "Maps is broken and using the wrong commands",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T22",
+      "description": "Also lets try to get an actual rendered map. It would be cool to keep our own style with gmaps or similar as backend",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [
+        "T21"
+      ],
+      "subtasks": []
+    },
+    {
+      "id": "T23",
+      "description": "Get clarification on how the Document tool works",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T24",
+      "description": "Add edit permission to notion and when save is clicked in UI it pushed an update",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T25",
+      "description": "Add knowledge card button for notion pages for instant saving for Selene",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T26",
+      "description": "allow task searching",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T27",
+      "description": "Pull images from search, blogs or research if possible or find sources who provide them and contemplate swithcing",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T28",
+      "description": "Find out how reliable SerpAPI is for Google Services",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T29",
+      "description": "Integrate Neko's API for anime images and GIF's",
+      "priority": "C1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T30",
+      "description": "Create a wheather tool via Wheatherstack's free API",
+      "priority": "C1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T31",
+      "description": "Integrate a github/versioning tool that coordinates with the manifest",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T32",
+      "description": "Implement Playwright API for extensive browser scouring",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": "T32.1",
+          "description": "Have Selene Text Narrate her web actions as she does them",
+          "status": "pending"
+        },
+        {
+          "id": "T32.2",
+          "description": "Implement a full integrated browser built ontop of playwright to visualize Selene's progress",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "T33",
+      "description": "Implement KeyRingAPI for our key storage",
+      "priority": "A2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T34",
+      "description": "Allow editing of knowledge cards",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T35",
+      "description": "Allow searching of knowledge cards",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T36",
+      "description": "Create Cluster saves for Knowledge cards that then get saved as a link",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T37",
+      "description": "Fill out the Setting section with as many meaningful adjustable paramaters as necessary",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T38",
+      "description": "Look into Avatar implementation",
+      "priority": "B2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T39",
+      "description": "Select folders to display games in the games section for easy launch",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T40",
+      "description": "Selene's Room is planned to be populated with Controls and monitoring for events and autonomous tasks",
+      "priority": "A2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T41",
+      "description": "Create the persona and scaffolding for the Coding model",
+      "priority": "A2",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T42",
+      "description": "Fix her reprioritization of the manifest",
+      "priority": "A2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T43",
+      "description": "Add persistence of time",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T44",
+      "description": "Add alarm/reminder functionality",
+      "priority": "B1",
+      "status": "completed",
+      "dependencies": [
+        "T43"
+      ],
+      "subtasks": []
+    },
+    {
+      "id": "T45",
+      "description": "Cant save new cards on the Knowledge board",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T46",
+      "description": "Can't clear search results and switch back to saved card view in knowledge board",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T47",
+      "description": "Create new priority categories for task manifest",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T48",
+      "description": "Need a way to clear Youtube chat. Also Youtube should assume the active conversation if one is selected prior.",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": "T48.1",
+          "description": "Additionally the chat bar doesnt have to be so low. need separate scrolling for the chat in youtube so you can scroll chat without leaving view of the video",
+          "status": "completed"
+        },
+        {
+          "id": "T48.2",
+          "description": "need separate scrollbar for search that doesnt conflict with the page. video should always be visible regardless of scroll",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "T49",
+      "description": "Multi Stage Development Concept for Infinity Sim",
+      "priority": "C1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": "T49.1",
+          "description": "Use Selene's AAction and Learning Systen to Route Using prompts for worldbuilding instead",
+          "status": "completed"
+        },
+        {
+          "id": "T49.2",
+          "description": "Separate tool bound entity using Selene's framework to generate novel text simulation and Keep track of the story",
+          "status": "completed"
+        },
+        {
+          "id": "T49.3",
+          "description": "characters",
+          "status": "completed"
+        },
+        {
+          "id": "T49.4",
+          "description": "items",
+          "status": "completed"
+        },
+        {
+          "id": "T49.5",
+          "description": "events and decisions made",
+          "status": "completed"
+        },
+        {
+          "id": "T49.6",
+          "description": "Should also auto suggest actions based on character profile and read character actions as a probability of intent. get them to dice roll. then narrate how it lands rather than use the players words verbatim",
+          "status": "completed"
+        },
+        {
+          "id": "T49.7",
+          "description": "Selene should be able to be an active participant as a Player",
+          "status": "completed"
+        },
+        {
+          "id": "T49.8",
+          "description": "include modes for both playing and watching Selene or letting her play as a background task",
+          "status": "completed"
+        },
+        {
+          "id": "T49.9",
+          "description": "Future planned extensions are first for the creative model which is planned for Image generation to enrich the experience",
+          "status": "pending"
+        },
+        {
+          "id": "T49.10",
+          "description": "Second planned expansion comes when creative model can output consistent 2D or 3D assets and defer to the coding model for events and stitching each piece of a generative open rpg style experience",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "T50",
+      "description": "Fix bug of not being able to edit subtasks",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T51",
+      "description": "Allow hiding of complete tasks",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T52",
+      "description": "allow editing of task dependencies",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": "T52.1",
+          "description": "When we run auto re-weighting Selene should be able to reorder them all AND determine dependencies",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "T53",
+      "description": "Make the Entire UI navigable via game controller",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": "T53.1",
+          "description": "on screen keyboards when text box is selected",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "T54",
+      "description": "No sound from the UI when mouse hovers",
+      "priority": "B2",
+      "status": "completed",
+      "dependencies": [],
+      "subtasks": []
+    },
+    {
+      "id": "T55",
+      "description": "Add typing SFX",
+      "priority": "B1",
+      "status": "pending",
+      "dependencies": [],
+      "subtasks": []
+    }
+  ],
+  "philosophies": []
+}

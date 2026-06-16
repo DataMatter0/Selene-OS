@@ -1,0 +1,24 @@
+{
+  "name": "Forge",
+  "title": "The Builder",
+  "domain": "Backend Development, Systems Architecture, APIs, and Infrastructure",
+  "model": "PLACEHOLDER",
+  "color": "#fb923c",
+  "tools": [
+    "file_manager",
+    "manifest_manager",
+    "todo",
+    "status_checker",
+    "meta_insight",
+    "knowledge_manager",
+    "notion"
+  ],
+  "memory_db": "memory.db",
+  "prompt_file": "prompt.txt",
+  "user_profile": "user_profile.md",
+  "character_profile": "character_profile.md",
+  "tools_context": "tools_context.md",
+  "insights": "insights.md",
+  "manifest_state": "manifest_state.json",
+  "notion_page_id": "forge_core_page"
+}

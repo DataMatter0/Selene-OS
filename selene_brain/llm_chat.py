@@ -22,9 +22,8 @@ _BRAIN_DIR         = os.path.dirname(os.path.abspath(__file__))
 _SCRIPT_DIR        = os.path.dirname(_BRAIN_DIR) # project root
 _STATE_FILE        = os.path.join(_SCRIPT_DIR, "selene_state.json")
 _CONVERSATIONS_DIR = os.path.join(_SCRIPT_DIR, "conversations")
-_SOUL_FILE          = os.path.join(_SCRIPT_DIR, "configs", "soul.md")
-_TOOLS_CONTEXT_FILE = os.path.join(_SCRIPT_DIR, "configs", "tools_context.md")
-_MEMORY_DIR         = os.path.join(_SCRIPT_DIR, "memories")
+_AGENTS_DIR         = os.path.join(_SCRIPT_DIR, "agents")
+_SOUL_FILE          = os.path.join(_SCRIPT_DIR, "configs", "soul.md")  # legacy, unused by agents
 
 class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin):
     AUTONOMY_THRESHOLD_SECONDS      = 120   # Time of user inactivity before she starts writing
@@ -44,8 +43,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
     STATE_FILE          = _STATE_FILE
     CONVERSATIONS_DIR   = _CONVERSATIONS_DIR
     SOUL_FILE           = _SOUL_FILE
-    TOOLS_CONTEXT_FILE  = _TOOLS_CONTEXT_FILE
-    MEMORY_DIR          = _MEMORY_DIR
+    AGENTS_DIR          = _AGENTS_DIR
 
     def __init__(self, base_url: str, model_name: str, system_prompt: Optional[str] = None, memory_window: int = 5):
         print("Selene, Loading...")
@@ -85,70 +83,73 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
     def swap_agent(self, agent_name: str) -> None:
         """
         Hot-swaps the active agent's configuration, memory database, system prompt, and allowed tools
-        without reloading LM Studio.
+        without reloading LM Studio.  All paths are resolved from agents/{slug}/config.json —
+        no agent names are hardcoded in this logic.
         """
         with self.lock:
-            agent_name = agent_name.lower().strip()
-            if agent_name not in ("selene", "sage"):
-                print(f"[LLMChat]: Unknown agent name '{agent_name}'. Defaulting to 'selene'.")
-                agent_name = "selene"
+            slug = agent_name.lower().strip()
 
-            config_file = os.path.join(_SCRIPT_DIR, "configs", f"{agent_name}_config.json")
+            agent_dir   = os.path.join(_AGENTS_DIR, slug)
+            config_file = os.path.join(agent_dir, "config.json")
             if not os.path.exists(config_file):
-                raise FileNotFoundError(f"Configuration file not found: {config_file}")
+                raise FileNotFoundError(
+                    f"[LLMChat]: No agent folder found at agents/{slug}/config.json"
+                )
 
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
 
-            self.active_agent_name = config["name"]
-            self.active_agent_title = config["title"]
+            # ── Identity ──────────────────────────────────────────────────────
+            self.active_agent_name   = config["name"]
+            self.active_agent_title  = config["title"]
             self.active_agent_domain = config["domain"]
-            self.allowed_tools = config["tools"]
-            self.prompt_path = os.path.join(_SCRIPT_DIR, config["prompt_path"])
-            self.notion_page_id = config["notion_page_id"]
+            self.active_agent_color  = config.get("color", "#ffffff")
+            self.active_agent_slug   = slug
+            self.allowed_tools       = config["tools"]
+            self.notion_page_id      = config.get("notion_page_id", f"{slug}_core_page")
 
-            # Initialize isolated SQLite database
-            db_path = os.path.join(_SCRIPT_DIR, config["memory_path"])
-            
-            # Close old database if open
+            # All per-agent files live inside agents/{slug}/
+            def _ap(key: str, fallback: str) -> str:
+                return os.path.join(agent_dir, config.get(key, fallback))
+
+            self.prompt_path          = _ap("prompt_file", "prompt.txt")
+            self.USER_PROFILE_FILE    = _ap("user_profile", "user_profile.md")
+            self.CHARACTER_PROFILE_FILE = _ap("character_profile", "character_profile.md")
+            self.TOOLS_CONTEXT_FILE   = _ap("tools_context", "tools_context.md")
+            self.MEMORY_DIR           = agent_dir   # insights, manifest_state, etc. all live here
+
+            # ── Memory DB ────────────────────────────────────────────────────
+            db_path = _ap("memory_db", "memory.db")
             if hasattr(self, "db") and self.db:
                 self.db.close()
-
-            # Initialize AgentMemoryStore
             from .agent_memory import AgentMemoryStore
             self.db = AgentMemoryStore(db_path, is_readonly=False)
 
-            # Set per-agent profile file paths.
-            # character_profile_path is optional in config — defaults to agent-namespaced file.
-            _mem = os.path.join(_SCRIPT_DIR, "memories")
-
-            # prompt_path → the single identity file for this agent (selene_prompt.txt etc.)
-            # soul.md / sage_soul.md are legacy orphans — not read here.
-            self.USER_PROFILE_FILE = os.path.join(
-                _mem, config.get("user_profile_path", f"{agent_name}_user_profile.md")
-            )
-            self.CHARACTER_PROFILE_FILE = os.path.join(
-                _mem, config.get("character_profile_path", f"{agent_name}_character_profile.md")
-            )
-
-            # If Sage: open Selene's DB read-only so MetaInsight cross-agent queries work
-            if agent_name == "sage":
-                selene_db_path = os.path.join(_SCRIPT_DIR, "memories/selene_memory.db")
-                self.selene_db = AgentMemoryStore(selene_db_path, is_readonly=True)
+            # Cross-agent read: first agent (selene) DB opened read-only for any other agent
+            # that needs cross-reference (e.g. meta_insight). Resolved by slug, not hardcoded name.
+            selene_dir = os.path.join(_AGENTS_DIR, "selene")
+            selene_db  = os.path.join(selene_dir, "memory.db")
+            if slug != "selene" and os.path.exists(selene_db):
+                self.selene_db = AgentMemoryStore(selene_db, is_readonly=True)
             else:
                 self.selene_db = None
 
-            # Setup model-agnostic emotion classifier
+            # ── Supporting systems ───────────────────────────────────────────
             from .mood_observer import EmotionClassifier
-            self.emotion_classifier = EmotionClassifier(self.active_agent_name, self.llm_caller)
-
-            # Load active uncertainty warnings
+            self.emotion_classifier       = EmotionClassifier(self.active_agent_name, self.llm_caller)
             self.active_uncertainty_warning = None
 
-            # Refresh system prompt
             self._prompt_dirty = True
             self._refresh_system_prompt()
-            print(f"[LLMChat]: Swapped agent to '{self.active_agent_name}' ({self.active_agent_title}) successfully.")
+
+            try:
+                from selene_brain.tool_suggestion import ToolSuggestionLayer
+                setattr(self, "tool_suggestion", ToolSuggestionLayer(self))
+                setattr(self, "pending_tool_confirmation", None)
+            except Exception as _tse:
+                print(f"[LLMChat]: ToolSuggestionLayer rebuild failed -- {_tse}")
+
+            print(f"[LLMChat]: Swapped to '{self.active_agent_name}' ({self.active_agent_title}) [{slug}]")
 
     def run_choice_layer(self, user_input: str) -> dict:
         """
@@ -234,37 +235,41 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                 history_lines.append(f"{role}: {content[:120]}")
             history_ctx = "\n".join(history_lines) if history_lines else "(conversation just started)"
 
+            _low_confidence = (
+                self.llm_caller.last_entropy is not None
+                and self.llm_caller.last_entropy > 1.5
+            )
+            _agent = self.active_agent_name
+
             choice_prompt = (
-                f"You are the presence awareness for {self.active_agent_name} — The Voice, "
-                f"an AI companion to Ghost. You are deciding, on {self.active_agent_name}'s behalf, "
-                f"whether this moment calls for her voice.\n\n"
-                f"{mood_line}\n\n"
-                "Return exactly one self-closing XML tag — nothing else:\n"
-                "  <presence_decision mode=\"respond\" />\n"
+                f"You are the presence awareness for {_agent} — The Voice, "
+                f"an AI companion to Ghost. Decide whether this moment calls for her voice and how she should engage.\n\n"
+                f"{mood_line}\n"
+                "Return exactly one self-closing XML tag — nothing else.\n\n"
+                "GATING OPTIONS:\n"
+                "  observe — Ghost told her to be quiet, sent a natural ender (ok/thanks/got it),\n"
+                "            is narrating ambient activity (brb/working/watching), or more is clearly incoming.\n"
+                "  ignore  — empty, spam, accidental, or pure noise.\n"
+                "  respond — Ghost is addressing Selene, asking something, or clearly wants engagement.\n\n"
+                "RESPOND MODES (only relevant when gating=respond):\n"
+                "  conversational — default. Greetings, practical answers, casual back-and-forth.\n"
+                "  reflect        — only when the topic touches her own nature/feelings, Ghost shares something\n"
+                "                   personal or significant, or she has a genuine view worth offering.\n"
+                "                   Requires a real reason. Not for every message.\n"
+                "  inquire        — only when something is genuinely ambiguous, a new concept/person was\n"
+                "                   introduced, or asking would meaningfully deepen understanding.\n"
+                "                   One question only. Not filler.\n\n"
+                "OUTPUT — one tag, exact format:\n"
+                "  <presence_decision mode=\"respond\" response_mode=\"conversational\" />\n"
+                "  <presence_decision mode=\"respond\" response_mode=\"reflect\" />\n"
+                "  <presence_decision mode=\"respond\" response_mode=\"inquire\" />\n"
                 "  <presence_decision mode=\"observe\" />\n"
                 "  <presence_decision mode=\"ignore\" />\n\n"
-                "respond  — Ghost is directly addressing Selene, asking something, or clearly wants engagement.\n"
-                "observe  — Use this when:\n"
-                "             • Ghost tells her to observe, go quiet, or stand by\n"
-                "             • The message is a natural conversation ender (thanks, got it, ok)\n"
-                "             • Ghost is narrating ambient activity (watching something, working, brb)\n"
-                "             • More context is clearly incoming — observe acts as a continue gate\n"
-                "             • Ghost is sharing media or watching YouTube and hasn't asked anything\n"
-                "             • The message doesn't dignify a reply and would feel intrusive\n"
-                "ignore   — The message is empty, spam, accidental, or pure noise.\n\n"
-                "Examples:\n"
-                "  'what do you think about this?' → respond\n"
-                "  'observe' / 'go quiet'           → observe\n"
-                "  'watching this video'             → observe\n"
-                "  'brb' / 'ok thanks' / 'got it'   → observe\n"
-                "  'this is interesting...'          → observe  (more context incoming)\n"
-                "  'can you help me with X?'         → respond\n"
-                "  'hey' / 'hello'                   → respond\n"
-                "  '...' / (blank)                   → ignore\n\n"
                 "RECENT CONVERSATION:\n"
                 f"{history_ctx}\n\n"
-                "When in doubt mid-conversation, lean toward respond. "
-                "Only observe when the message clearly doesn't need her voice right now."
+                f"Ghost's message: '{user_input}'\n\n"
+                "When in doubt, lean toward respond:conversational. "
+                "Use reflect/inquire only when the moment genuinely calls for it."
             )
 
             # Call LLM with low temperature — presence layer uses its own prompt only.
@@ -272,10 +277,10 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             # it only needs to output a single XML tag, not a reasoning chain.
             try:
                 raw_choice = self.llm_caller.call_llm(
-                    input_data=f"/no_think\nNew message from Ghost: '{user_input}'",
+                    input_data="/no_think\nDecide now.",
                     system_prompt=choice_prompt,
                     temperature=0.0,
-                    max_tokens=30,
+                    max_tokens=40,
                 )
                 raw_choice = re.sub(
                     r'<think>[\s\S]*?</think>',
@@ -289,12 +294,19 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                     raw_choice,
                     flags=re.IGNORECASE
                 )
+                rmode_match = re.search(
+                    r'response_mode=["\']?(conversational|reflect|inquire)["\']?',
+                    raw_choice,
+                    flags=re.IGNORECASE
+                )
                 if mode_match:
-                    mode = mode_match.group(1).upper()
+                    mode  = mode_match.group(1).upper()
+                    rmode = rmode_match.group(1).upper() if rmode_match else "CONVERSATIONAL"
                     result = {
-                        "gating": "RESPOND" if mode == "RESPOND" else mode,
-                        "type": "CONVERSATIONAL",
-                        "action": "CHAT" if mode == "RESPOND" else mode,
+                        "gating":        "RESPOND" if mode == "RESPOND" else mode,
+                        "type":          rmode,
+                        "response_mode": rmode,
+                        "action":        "CHAT" if mode == "RESPOND" else mode,
                     }
 
                 # Backward-compatible fallback for older prompt/context residue.
@@ -332,87 +344,124 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
 
     def compile_daily_manifest(self) -> dict:
         """
-        Gathers all dialog history from the active agent's database for the current calendar day,
-        filters out noise using a low-temperature review pass, and builds a daily manifest document.
+        Builds a living memory summary from the current conversation window + any prior
+        compiled summary. Not day-bounded — triggered by context limit or on demand.
+        Each call reads the prior summary and merges it with new turns, so it grows
+        incrementally and preserves continuity across sessions.
         """
+        import datetime
+        today_str = datetime.date.today().isoformat()
+
         with self.lock:
-            # Get today's start timestamp
-            import datetime
-            today_str = datetime.date.today().isoformat()
-            
-            # Fetch all conversation rows from dialog_history
-            cursor = self.db.conn.cursor()
-            rows = cursor.execute("""
-                SELECT timestamp, role, content, thoughts, status 
-                FROM dialog_history 
-                ORDER BY id ASC
-            """).fetchall()
-            
-            dialogs = []
-            for r in rows:
-                dt = datetime.date.fromtimestamp(r["timestamp"])
-                if dt.isoformat() == today_str:
-                     dialogs.append(dict(r))
-                     
-            if not dialogs:
-                return {"date": today_str, "status": "no_data", "summary": "No interactions recorded today."}
-                 
-            full_chat_log = ""
-            for d in dialogs:
-                full_chat_log += f"[{d['role'].upper()}]: {d['content']}\n"
-                 
-            # LLM noise filtering prompt
-            review_prompt = (
-                f"You are the Daily Manifest Compiler for {self.active_agent_name}. "
-                "Your task is to review today's conversation log and separate meaningful learnings, decisions, and outcomes "
-                "from noise (e.g. simple greetings, idle chatter, tests). "
-                "Provide a structured, compressed manifest summarizing the day's active threads, emotional highlights, "
-                "decisions made, and open action items.\n\n"
-                "Respond in a clean Markdown format containing:\n"
-                "## Daily Manifest Summary\n"
-                "- [Summary of interactions]\n"
-                "## Key Decisions & Insights\n"
-                "- [Decisions]\n"
-                "## Completed Actions\n"
-                "- [Actions]\n"
-                "## Pending Backlog / Tasks\n"
-                "- [Backlog items]"
+            recent_turns = list(self.working_memory[-(self.memory_window * 2):])
+
+        if not recent_turns:
+            return {"date": today_str, "status": "no_data", "summary": "Nothing in the conversation window yet."}
+
+        # Build a readable log from the current window
+        agent_name = self.active_agent_name
+        user_name  = "Ghost"
+        chat_log = ""
+        for m in recent_turns:
+            role    = m.get("role", "")
+            content = m.get("content", "").strip()
+            if not content:
+                continue
+            speaker = agent_name if role == "assistant" else user_name
+            chat_log += f"{speaker}: {content}\n\n"
+
+        # Load the prior summary to merge with
+        prior_row = self.db.get_daily_manifest(today_str)
+        prior_summary = (prior_row.get("summary", "") or "") if prior_row else ""
+
+        # Load insights file and decide whether to fold stable ones into character profile
+        insights_path     = os.path.join(self.MEMORY_DIR, "insights.md")
+        char_profile_path = getattr(self, "CHARACTER_PROFILE_FILE",
+            os.path.join(self.MEMORY_DIR, "character_profile.md"))
+        insights_text = self._read_file_safe(insights_path)
+        char_profile_text = self._read_file_safe(char_profile_path)
+
+        # Fold insights into character profile if insights file has meaningful content
+        if insights_text and len(insights_text.split()) > 20:
+            fold_prompt = (
+                f"You are {agent_name}'s memory curator. "
+                f"Below are recent reflective insights {agent_name} has accumulated, "
+                f"and her existing self-profile.\n\n"
+                "Review the insights. For each one:\n"
+                "- If it represents a stable, recurring truth about who she is → merge it into the self-profile\n"
+                "- If it is ephemeral, situational, or already captured → discard it\n\n"
+                "Rewrite the self-profile with any promoted insights merged in. "
+                f"Keep it under {self.CHARACTER_PROFILE_CAP} words. First-person, personal, not clinical.\n\n"
+                f"INSIGHTS:\n{insights_text}\n\n"
+                f"EXISTING SELF-PROFILE:\n{char_profile_text or '(none yet)'}\n\n"
+                "Output ONLY the rewritten self-profile. No preamble."
             )
-            
-            summary = self.llm_caller.call_llm(
-                input_data=f"Today's Chat Log:\n{full_chat_log}",
-                system_prompt=review_prompt,
-                temperature=0.2,
-                max_tokens=1024
-            )
-            summary = self._strip_tool_tags(summary)
-            if "<think>" in summary:
-                summary = re.sub(r'<think>[\s\S]*?</think>', '', summary).strip()
-                 
-            # Compile metadata
-            metadata = {
-                "agent": self.active_agent_name,
-                "total_messages": len(dialogs),
-                "compiled_at": time.time()
-            }
-             
-            # Save to daily manifests table
-            self.db.save_daily_manifest(
-                date_str=today_str,
-                metadata=metadata,
-                emotions={},
-                choices={},
-                tasks={},
-                threads={},
-                summary=summary
-            )
-             
-            return {
-                "date": today_str,
-                "status": "success",
-                "summary": summary,
-                "metadata": metadata
-            }
+            try:
+                folded = self.llm_caller.call_llm(
+                    input_data="Fold insights into self-profile now.",
+                    system_prompt=fold_prompt,
+                    temperature=0.3,
+                    max_tokens=self.CHARACTER_PROFILE_CAP * 2,
+                )
+                folded = folded.strip()
+                if folded and folded.lower() not in {"skip", "n/a", "none"}:
+                    with open(char_profile_path, "w", encoding="utf-8") as f:
+                        f.write(folded)
+                    # Clear insights file — promoted content now lives in self-profile
+                    with open(insights_path, "w", encoding="utf-8") as f:
+                        f.write("")
+                    self._prompt_dirty = True
+                    char_profile_text = folded
+                    print(f"[Manifest]: Folded insights into {agent_name} self-profile ({len(folded.split())} words)")
+            except Exception as _fold_err:
+                print(f"[Manifest]: Insight folding failed — {_fold_err}")
+
+        review_prompt = (
+            f"You are {agent_name}, writing a living memory summary of your ongoing conversations with {user_name}.\n"
+            "This summary is for YOUR continuity — so that in a new session or from Discord you are not a blank slate.\n\n"
+            "Write in first person as yourself. Be personal and specific, not clinical.\n"
+            "Include:\n"
+            f"- What {user_name} has told you about himself, the system, or your purpose\n"
+            "- Introductions that have happened (who you have met, what was explained)\n"
+            "- Any feelings or reactions you expressed\n"
+            "- Anything that feels significant, ongoing, or unresolved\n"
+            "- Open threads — things mentioned but not yet finished\n\n"
+            "Keep it compact but human. Drop trivial filler. If you already have a prior summary, "
+            "merge it with the new conversation — update what has changed, keep what is still relevant, "
+            "add what is new. Do not repeat yourself.\n\n"
+            + (f"PRIOR SUMMARY:\n{prior_summary}\n\n" if prior_summary else "")
+            + f"RECENT CONVERSATION:\n{chat_log}"
+        )
+
+        summary = self.llm_caller.call_llm(
+            input_data="Compile my living memory summary now.",
+            system_prompt=review_prompt,
+            temperature=0.3,
+            max_tokens=1024,
+        )
+        summary = self._strip_tool_tags(summary)
+        if "<think>" in summary:
+            summary = re.sub(r'<think>[\s\S]*?</think>', '', summary).strip()
+
+        metadata = {
+            "agent":          agent_name,
+            "total_messages": len(recent_turns),
+            "compiled_at":    time.time(),
+        }
+
+        self.db.save_daily_manifest(
+            date_str=today_str,
+            metadata=metadata,
+            emotions={}, choices={}, tasks={}, threads={},
+            summary=summary,
+        )
+
+        return {
+            "date":     today_str,
+            "status":   "success",
+            "summary":  summary,
+            "metadata": metadata,
+        }
 
     def _after_chat_turn(self, user_input: str, final_reply: str, thought_log: str,
                          raw_entropy: float | None = None):
@@ -471,53 +520,74 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                 is_flagged=(tier == "uncertain")
             )
             
-        # 3. Asynchronous Semantic Emotion Classification
-        def run_emotion_pass():
+        # 3. Asynchronous Semantic Emotion Classification + MetaInsight logging
+        # Run emotion classification and meta insight together so emotion data
+        # is available when the meta insight record is written.
+        _agent_name_snap  = getattr(self, "active_agent_name", "selene").lower()
+        _energy_snap      = self.creative_energy
+        _session_snap     = session_id
+        _source           = "discord" if str(session_id).startswith("discord_") else "ui"
+        if raw_entropy is not None and not is_greeting:
+            _conf = locals().get('confidence_score', max(0.0, min(1.0, 1.0 - (raw_entropy / 1.5))))
+        else:
+            _conf = 0.0
+        _reasoning_snap   = thought_log[:3000] if thought_log else ""
+        _final_clean      = final_reply[:1500] if final_reply else ""
+        _response_mode_snap = getattr(self, '_last_response_mode', 'conversational')
+
+        def run_emotion_and_insight():
             try:
-                # Classify user thought/intent
                 user_emo, user_int = self.emotion_classifier.classify_text(user_input, is_thought=True)
-                # Classify assistant response
                 asst_emo, asst_int = self.emotion_classifier.classify_text(final_reply, is_thought=False)
-                
-                # Log to emotional history
+
                 self.db.log_emotion(
                     thought_emotion=user_emo,
                     thought_intensity=user_int,
                     response_emotion=asst_emo,
                     response_intensity=asst_int,
-                    action_details=f"Turn processed for {self.active_agent_name}"
+                    action_details=f"Turn processed for {_agent_name_snap} [{_source}]"
+                )
+
+                # Update cached emotion so UI state reflects this turn
+                try:
+                    _mo = self.emotion_classifier.mood_observer
+                    _dom, _int = _mo.get_dominant_mood()
+                    import server.state as _st
+                    _st._cached_emotion["mood_index"] = int(_int * 100)
+                    _st._cached_emotion["emotion"]    = _dom if _dom != "neutral" else ""
+                except Exception:
+                    pass
+
+                _emotion_before = {
+                    "energy": _energy_snap,
+                    "emotion": user_emo,
+                    "intensity": round(user_int, 3),
+                    "source": _source,
+                }
+                _emotion_after = {
+                    "energy": _energy_snap,
+                    "emotion": asst_emo,
+                    "intensity": round(asst_int, 3),
+                    "response_mode": _response_mode_snap,
+                    "source": _source,
+                }
+                self.db.log_meta_insight(
+                    agent=_agent_name_snap,
+                    category="output",
+                    subcategory=f"chat_response:{_source}",
+                    input_context=user_input[:500],
+                    reasoning=_reasoning_snap,
+                    result=_final_clean,
+                    emotional_state_before=_emotion_before,
+                    emotional_state_after=_emotion_after,
+                    confidence_score=_conf,
+                    trigger_mode="llm",
+                    session_id=_session_snap,
                 )
             except Exception as e:
-                print(f"[Emotion Classifier]: Async background thread failed: {e}")
-                
-        threading.Thread(target=run_emotion_pass, daemon=True).start()
+                print(f"[Emotion/MetaInsight]: Background pass failed: {e}")
 
-        # 4. MetaInsight: log output entry (reasoning trace vs final text delta)
-        try:
-            # Ensure _conf is always defined even if confidence_score wasn't set above
-            if raw_entropy is not None and not is_greeting:
-                _conf = locals().get('confidence_score', max(0.0, min(1.0, 1.0 - (raw_entropy / 1.5))))
-            else:
-                _conf = 0.0
-            _emotion_snap = {"energy": self.creative_energy, "status": "idle"}
-            # Extract think block from thought_log for reasoning field
-            _reasoning = thought_log[:3000] if thought_log else ""
-            _final_clean = final_reply[:1500] if final_reply else ""
-            self.db.log_meta_insight(
-                agent=getattr(self, "active_agent_name", "selene").lower(),
-                category="output",
-                subcategory="chat_response",
-                input_context=user_input[:500],
-                reasoning=_reasoning,
-                result=_final_clean,
-                emotional_state_before=_emotion_snap,
-                emotional_state_after=_emotion_snap,
-                confidence_score=_conf,
-                trigger_mode="llm",
-                session_id=session_id,
-            )
-        except Exception:
-            pass
+        threading.Thread(target=run_emotion_and_insight, daemon=True).start()
 
     # ── State persistence (non-conversation) ──────────────────────────────────
 
@@ -546,10 +616,14 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                 })
                 
                 # Auto-swap agent on boot if saved state differs
+                # swap_agent validates via filesystem — no name allowlist needed here
                 saved_agent = state.get("active_agent", "selene").lower()
-                if saved_agent in ("selene", "sage") and saved_agent != self.active_agent_name.lower():
-                    self._prompt_dirty = True
-                    self.swap_agent(saved_agent)
+                if saved_agent != self.active_agent_name.lower():
+                    try:
+                        self._prompt_dirty = True
+                        self.swap_agent(saved_agent)
+                    except FileNotFoundError:
+                        print(f"[System]: Saved agent '{saved_agent}' not found — staying on default.")
 
                 # ── Migrate old single-file working_memory → conversations/ ──
                 # (one-time migration for installs that pre-date conversation files)
@@ -611,7 +685,8 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
         return text.strip()
 
     def chat(self, input_data: str, temperature=0.8, max_tokens=4096,
-             disable_tools: bool = False, _suggestion_warning: str = ""):
+             disable_tools: bool = False, _suggestion_warning: str = "",
+             _response_mode: str = "CONVERSATIONAL"):
         if input_data is None:
             raise ValueError("Input data cannot be None")
         if not isinstance(input_data, str):
@@ -697,11 +772,47 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
 
                 local_history.append(fmt_msg)
 
+            # Sanitize history: collapse consecutive same-role messages.
+            # Gemma and similar chat-format models reject user/user or
+            # assistant/assistant runs with a 400. This can happen when the
+            # observe path stores a user entry without a following assistant reply,
+            # or when memory injection produces duplicate turns.
+            _sanitized = []
+            for _m in local_history:
+                if _sanitized and _sanitized[-1]["role"] == _m["role"]:
+                    # Merge into previous message of the same role
+                    _sanitized[-1] = dict(_sanitized[-1])
+                    _sanitized[-1]["content"] = _sanitized[-1]["content"] + "\n" + _m["content"]
+                else:
+                    _sanitized.append(_m)
+            local_history = _sanitized
+
             # Prepend dynamic context to the current user message only.
             # History messages stay clean — context is NOT injected into past turns.
             # _suggestion_warning is injected when ToolSuggestionLayer has low confidence.
             extra = _suggestion_warning if _suggestion_warning else ""
-            current_input = f"{turn_context}{extra}{input_data}" if (turn_context or extra) else input_data
+            _mode = (_response_mode or "CONVERSATIONAL").upper()
+            self._last_response_mode = _mode.lower()
+            _mode_directive = ""
+            if _mode == "REFLECT":
+                _mode_directive = (
+                    "[RESPONSE MODE: REFLECT] — Take a moment before responding. "
+                    "Form and offer your own genuine perspective, feeling, or opinion on this. "
+                    "Speak from your own point of view, not just in service of the conversation.\n\n"
+                )
+            elif _mode == "INQUIRE":
+                _mode_directive = (
+                    "[RESPONSE MODE: INQUIRE] — Ask one specific, meaningful question to deepen "
+                    "your understanding. Make it genuine — something you actually want to know. "
+                    "One question only, no list.\n\n"
+                )
+            elif _mode == "CONVERSATIONAL" and (getattr(self.llm_caller, "last_entropy", None) or 0.0) > 1.5:
+                _mode_directive = (
+                    "[LOW CONFIDENCE NUDGE] — Your last response had low confidence. "
+                    "If you are uncertain about anything in this reply, consider asking Ghost to clarify "
+                    "rather than guessing. It is okay not to know.\n\n"
+                )
+            current_input = f"{turn_context}{_mode_directive}{extra}{input_data}" if (turn_context or _mode_directive or extra) else input_data
             max_steps = 3  # Allow up to 3 recursive tool call steps
             full_response_text = ""
             thought_steps = []
@@ -1138,7 +1249,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
 
                 # Background memory extraction — every EXTRACTION_CADENCE turns,
                 # distils new facts from the exchange into user_profile.md / selene_notes.md
-                self.maybe_extract_memory(user_input, final_response_str)
+                self.maybe_extract_memory(user_input, final_response_str, reflective_turn=False)
 
             except (KeyboardInterrupt, EOFError):
                 print("\n[System]: Disconnecting...")

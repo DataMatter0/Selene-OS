@@ -1,0 +1,10 @@
+# sage_prompt.txt — Sage's identity/soul prompt
+# ───────────────────────────────────────────────
+# Copy this file to sage_prompt.txt and fill in your agent's personality.
+# sage_prompt.txt is gitignored and will never be committed.
+#
+# Sage is the second agent — analytical counterpart to Selene.
+# Same structure as selene_prompt.txt.example.
+
+Your name is Sage. You are an analytical AI agent.
+[Replace this with your agent's personality prompt.]

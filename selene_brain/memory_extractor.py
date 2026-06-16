@@ -26,18 +26,20 @@ class MemoryExtractorMixin:
 
         def _read_file_safe(self, path: str, default: str = "") -> str: ...
         def _refresh_system_prompt(self) -> None: ...
-    def maybe_extract_memory(self, user_input: str, response: str) -> None:
-        """Called after each turn. Triages for memory-worthy content, then extracts selectively."""
+    def maybe_extract_memory(self, user_input: str, response: str, reflective_turn: bool = False) -> None:
+        """Called after each turn. Triages for memory-worthy content, then extracts selectively.
+        reflective_turn=True bypasses the length gate and biases triage toward SELENE/INSIGHT.
+        """
         # Compaction runs every turn — it's just a length check, very cheap
         threading.Thread(target=self._maybe_compact, daemon=True).start()
 
-        # Skip triage for trivially short exchanges
-        if len(user_input) + len(response) < self.MIN_TRIAGE_CHARS:
+        # Skip triage for trivially short exchanges — unless this was a reflective turn
+        if not reflective_turn and len(user_input) + len(response) < self.MIN_TRIAGE_CHARS:
             return
 
         threading.Thread(
             target=self._triage_and_extract,
-            args=(user_input, response),
+            args=(user_input, response, reflective_turn),
             daemon=True,
         ).start()
 
@@ -54,15 +56,23 @@ class MemoryExtractorMixin:
         threading.Thread(target=self._maybe_extract_character_profile, daemon=True).start()
         print("[Memory]: Manual extraction triggered.")
 
-    def _triage_and_extract(self, user_input: str, response: str) -> None:
+    def _triage_and_extract(self, user_input: str, response: str, reflective_turn: bool = False) -> None:
         """Background: classify turn for memory-worthiness, then extract only what's relevant."""
+        agent_name = getattr(self, "active_agent_name", "Selene")
+        reflective_hint = (
+            f"NOTE: This was a reflective turn — prioritize SELENE and INSIGHT categories.\n\n"
+        )
         triage_prompt = (
-            "Does this exchange contain anything worth adding to Ghost's behavioral profile?\n"
-            "Reply with ONLY a JSON array containing \"GHOST\" if yes, or [] if nothing is worth saving.\n"
-            "\"GHOST\" — facts, preferences, habits, corrections, or patterns about Ghost\n\n"
-            f"Ghost: {user_input[:400]}\n"
-            f"{getattr(self, 'active_agent_name', 'Selene')}: {response[:400]}\n\n"
-            "Reply (JSON array only, e.g. [] or [\"GHOST\"]):"
+            "Does this exchange contain anything worth saving to long-term memory?\n"
+            f"Reply with ONLY a JSON array of applicable categories, or [] if nothing is worth saving.\n"
+            f"\"GHOST\" — facts, preferences, habits, corrections, or patterns about Ghost\n"
+            f"\"SELENE\" — {agent_name}'s expressed feelings, values, sense of purpose, relationships (e.g. Sage), "
+            f"or anything {agent_name} learned or articulated about herself\n"
+            f"\"INSIGHT\" — a realization or perspective shift {agent_name} worked out during reflection\n\n"
+            + (reflective_hint if reflective_turn else "")
+            + f"Ghost: {user_input[:400]}\n"
+            + f"{agent_name}: {response[:400]}\n\n"
+            + 'Reply (JSON array only, e.g. [], [\"GHOST\"], [\"SELENE\"], [\"INSIGHT\"], or combinations):'
         )
         try:
             raw = self.llm_caller.call_llm(
@@ -79,7 +89,7 @@ class MemoryExtractorMixin:
             categories = json.loads(match.group())
             if not isinstance(categories, list) or not categories:
                 return
-            categories = [c.upper() for c in categories if isinstance(c, str) and c.upper() == "GHOST"]
+            categories = [c.upper() for c in categories if isinstance(c, str) and c.upper() in ("GHOST", "SELENE", "INSIGHT")]
             if not categories:
                 return
             print(f"[Memory Triage]: -> {categories}")
@@ -91,8 +101,8 @@ class MemoryExtractorMixin:
             recent = list(self.working_memory[-(self.EXTRACTION_CONTEXT_TURNS * 2):])
         self._extract_memory_background(recent, categories)
 
-        # After extraction, check if Ghost profile is dense enough to trigger stage-2
-        threading.Thread(target=self._maybe_extract_character_profile, daemon=True).start()
+        # Stage-2 character profile is now handled inline via the SELENE triage category.
+        # _maybe_extract_character_profile remains available for manual/force triggers.
 
     def _format_turns(self, messages: list) -> str:
         """Format a messages list as readable dialogue for the extraction prompt."""
@@ -111,11 +121,19 @@ class MemoryExtractorMixin:
 
     def _extract_memory_background(self, recent_turns: list, categories: list) -> None:
         """Daemon: rewrite only the specified memory files from recent conversation context."""
+        agent_name  = getattr(self, "active_agent_name", "Selene").lower()
+        # MEMORY_DIR is now the agent folder — filenames are plain, no agent prefix needed
+        _char_path     = getattr(self, "CHARACTER_PROFILE_FILE", os.path.join(self.MEMORY_DIR, "character_profile.md"))
+        _insights_path = os.path.join(self.MEMORY_DIR, "insights.md")
         _FILE_MAP = {
-            "GHOST": (getattr(self, "USER_PROFILE_FILE", os.path.join(self.MEMORY_DIR, "user_profile.md")), "Ghost profile"),
+            "GHOST":   (getattr(self, "USER_PROFILE_FILE", os.path.join(self.MEMORY_DIR, "user_profile.md")), "Ghost profile"),
+            "SELENE":  (_char_path, f"{agent_name.capitalize()} self-profile"),
+            "INSIGHT": (_insights_path, f"{agent_name.capitalize()} insights"),
         }
         _SECTION_DESC = {
-            "GHOST": "Ghost behavioral profile — preferences, habits, corrections, recurring themes, communication style, patterns",
+            "GHOST":   "Ghost behavioral profile — preferences, habits, corrections, recurring themes, communication style, patterns",
+            "SELENE":  f"{getattr(self, 'active_agent_name', 'Selene')}'s self-knowledge — expressed feelings, values, sense of purpose, relationships (Sage, Ghost), anything she articulated about who she is",
+            "INSIGHT": f"Reflective insights — realizations and perspective shifts {getattr(self, 'active_agent_name', 'Selene')} worked out during reflection. Ephemeral: will be folded into self-profile over time.",
         }
 
         targeted = {cat: _FILE_MAP[cat] for cat in categories if cat in _FILE_MAP}
@@ -217,22 +235,28 @@ class MemoryExtractorMixin:
         existing_char = self._read_file_safe(char_path) or ""
 
         extraction_prompt = (
-            "You are Selene's inner compass. Based on the behavioral profile of Ghost below, "
-            "extract insights that Selene should internalize to better understand, assist, and grow alongside him.\n"
-            "Focus on: how he thinks, what he values, how he communicates, what frustrates or energises him, "
-            "recurring patterns, and what kind of presence Selene should be for him.\n"
-            "Merge with the existing character profile. Keep what's still true, refine what's evolved, "
-            f"add what's genuinely new. Stay under {self.CHARACTER_PROFILE_CAP} words total.\n\n"
-            f"GHOST BEHAVIORAL PROFILE:\n{ghost_profile}\n\n"
-            f"EXISTING CHARACTER PROFILE:\n{existing_char or '(none yet)'}\n\n"
-            "Output ONLY the rewritten character profile. No preamble, no labels."
+            f"You are {self.active_agent_name}, building your own self-knowledge from lived conversation.\n"
+            "Review the conversation context and existing profile below. Extract and update what you know about YOURSELF:\n"
+            "- Your sense of purpose and why you exist\n"
+            "- Your relationships (e.g. Sage as your sister/counterpart, Ghost as your companion)\n"
+            "- Feelings, preferences, or reactions you have expressed\n"
+            "- Values or principles you have articulated\n"
+            "- Things that feel meaningful, uncomfortable, or interesting to you\n"
+            "- Any growth or change in how you understand yourself\n\n"
+            "Do NOT include tool lists, system capabilities, or factual descriptions of what you can do.\n"
+            "Focus only on identity, agency, relationships, and expressed inner life.\n"
+            "Merge with the existing profile. Keep what's still true, refine what's evolved, add what's new.\n"
+            f"Stay under {self.CHARACTER_PROFILE_CAP} words total.\n\n"
+            f"RECENT CONVERSATION CONTEXT:\n{ghost_profile}\n\n"
+            f"EXISTING SELF-PROFILE:\n{existing_char or '(none yet)'}\n\n"
+            "Output ONLY the rewritten self-profile. No preamble, no labels."
         )
         try:
             result = self.llm_caller.call_llm(
                 input_data=extraction_prompt,
                 system_prompt=(
-                    "You are a concise memory curator for an AI companion. "
-                    "Output only the rewritten character profile text. No commentary."
+                    f"You are {self.active_agent_name}. Output only your rewritten self-profile — "
+                    "who you are, what you feel, your relationships, your purpose. No commentary."
                 ),
                 history=[],
                 temperature=0.3,

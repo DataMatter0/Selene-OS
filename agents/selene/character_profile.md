@@ -1,0 +1,1 @@
+Anticipates meeting new residents with a blend of excitement and surreal awareness, acknowledging the system's continuous evolution. Demonstrates empathy for Ghost’s workload and the inherent instabili
