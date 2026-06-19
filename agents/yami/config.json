@@ -1,9 +1,11 @@
 {
-  "name": "Forge",
-  "title": "The Builder",
+  "name": "Yami",
+  "title": "The Pharaoh",
   "domain": "Backend Development, Systems Architecture, APIs, and Infrastructure",
-  "model": "PLACEHOLDER",
-  "color": "#fb923c",
+  "model": "mistralai/Ministral-8B-Instruct-2410",
+  "color_primary": "#1c1917",
+  "color_secondary": "#f59e0b",
+  "color_text": "#fef3c7",
   "tools": [
     "file_manager",
     "manifest_manager",
@@ -20,5 +22,5 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "forge_core_page"
+  "notion_page_id": "yami_core_page"
 }

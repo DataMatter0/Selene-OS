@@ -1,9 +1,11 @@
 {
-  "name": "Iris",
-  "title": "The Architect",
+  "name": "Akari",
+  "title": "The Saintess",
   "domain": "Frontend Development, UI/UX, Component Design, and Visual Systems",
-  "model": "PLACEHOLDER",
-  "color": "#34d399",
+  "model": "DevQuasar/Tesslate.UIGEN-T2-7B-GGUF:Q4_K_M",
+  "color_primary": "#fef3c7",
+  "color_secondary": "#f59e0b",
+  "color_text": "#78350f",
   "tools": [
     "file_manager",
     "manifest_manager",
@@ -19,5 +21,5 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "iris_core_page"
+  "notion_page_id": "akari_core_page"
 }

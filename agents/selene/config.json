@@ -3,7 +3,9 @@
   "title": "The Voice",
   "domain": "Communication, Interpretation, Emotional Continuity, and Daily Habits",
   "model": "google/gemma-3n-e4b",
-  "color": "#a78bfa",
+  "color_primary": "#2dd4bf",
+  "color_secondary": "#0f766e",
+  "color_text": "#f0fdfa",
   "tools": [
     "memory_tool",
     "status_checker",

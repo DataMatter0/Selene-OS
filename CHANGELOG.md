@@ -168,6 +168,58 @@ The thin `selene_server.py` now only: wires FastAPI + CORS, registers REST route
 
 ---
 
+## [v0.5] 2026-06-19 — Pantheon Skeleton + UI Wiring
+
+### Added
+
+**agents/ folder — six self-contained agent cards**
+- Uniform per-agent folder layout: `config.json`, `prompt.txt`, `user_profile.md`, `character_profile.md`, `tools_context.md`, `insights.md`, `manifest_state.json`, `memory.db`
+- `config.json` schema drives all runtime path resolution — no agent names hardcoded in Python logic
+- Six agents scaffolded: Selene, Sage, Akari, Yami, ROM, RAM
+
+**Model stack locked**
+- Selene + Sage: `google/gemma-3n-e4b` (Gemma family)
+- Akari (The Saintess, Frontend): `DevQuasar/Tesslate.UIGEN-T2-7B-GGUF:Q4_K_M` — Qwen2.5-Coder fine-tuned on 50k UI samples with design-reasoning traces. Q4_K_M = 4.68GB, fits 6GB VRAM
+- Yami (The Pharaoh, Backend): `mistralai/Ministral-8B-Instruct-2410` — Mistral family, structural and precise
+- ROM (The Dreamer, Creative/VL): `WarlordHermes/Huihui-Qwen3-VL-8B-Instruct-Creative-v0.4` — Qwen VL fine-tuned for creative writing + visual interpretation
+- RAM (The Creative, Image Gen): `black-forest-labs/FLUX.1-schnell` — diffusion model, no LLM slot
+- Three distinct LLM families across five LLM agents: Gemma, Qwen, Mistral
+
+**`swap_agent` rewrite — fully path-agnostic**
+- All file paths resolved via `_ap(key, fallback)` helper from `agents/{slug}/config.json`
+- `self.MEMORY_DIR = agent_dir` — manifest, memory_extractor, all tools inherit correct paths automatically
+- Per-agent `AgentMemoryStore`; Selene DB optionally opened read-only for cross-agent reference
+- `FileNotFoundError` on missing config replaces old `("selene", "sage")` allowlist
+
+**`agent_meta` state broadcast**
+- `server/state.py` `get_state()` includes `agent_meta`: name, title, domain, color_primary, slug
+- Frontend reads live agent identity on every state poll — no hardcoded names in renderer
+
+**UI — dynamic Pantheon wiring**
+- `TopBar.jsx`: `PANTHEON` array drives dropdown — data-driven, no hardcoded agent logic
+- `renderer/index.css`: theme blocks for all six agents (`.theme-selene` through `.theme-ram`), full CSS variable overrides per agent
+- `renderer/index.html`: toggle cycles all six slugs; bottom bar shows live agent name; `MEM_TABS` converted to function taking `agentName`
+- `Dashboard.jsx`: passes `agentMeta` to TopBar, `agentName` to MemoryView
+- `MemoryView.jsx`: single dynamic `manifest` tab replaces hardcoded `manifest_selene`/`manifest_sage`
+- `server/handlers/memory.py`: all file paths resolve through active agent's `MEMORY_DIR`; returns `agent_name` for tab labeling
+
+### Changed
+- `memory_extractor.py`: removed `{agent_name}_` prefixes — paths derive from `self.MEMORY_DIR`
+- `tools/manifest.py`: `load_state_json`/`save_state_json` use `self.agent_state.MEMORY_DIR`
+- `.gitignore`: added `agents/*/memory.db`, `agents/*/prompt.txt`, `agents/*/soul.md`
+- `CODEBASE.md`: agents/ section added — folder layout, config schema, swap_agent pattern, model stack table
+
+### Safe to commit
+- `agents/` (configs, profiles, example files — excludes `memory.db`, `prompt.txt`, `soul.md`)
+- `selene_brain/llm_chat.py`, `selene_brain/memory_extractor.py`
+- `tools/manifest.py`
+- `server/state.py`, `server/handlers/memory.py`
+- `renderer/index.css`, `renderer/index.html`, `renderer/components/TopBar.jsx`, `renderer/components/Dashboard.jsx`, `renderer/components/MemoryView.jsx`
+- `CODEBASE.md`, `CHANGELOG.md`
+- Do NOT commit: `.env`, `agents/*/memory.db`, `agents/*/prompt.txt`, `agents/*/soul.md`, `memories/`, `conversations/`, `selene_state.json`
+
+---
+
 ## Unreleased
 
 _Track in-progress work here. Move to a versioned block when committing._

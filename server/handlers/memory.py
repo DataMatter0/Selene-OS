@@ -17,37 +17,22 @@ async def handle(websocket, data: dict, loop) -> bool:
             today     = datetime.date.today().isoformat()
             soul_path = getattr(selene, "prompt_path", getattr(selene, "SOUL_FILE", selene.SOUL_FILE))
 
-            def _get_manifest(db, date_str):
-                try:
-                    row = db.get_daily_manifest(date_str)
-                    return row.get("summary", "") if row else ""
-                except Exception:
-                    return ""
-
-            manifest_selene = _get_manifest(selene.db, today)
-
-            manifest_sage = ""
+            # Active agent's daily manifest — always from the currently loaded DB
             try:
-                from selene_brain.agent_memory import AgentMemoryStore as _AMS
-                _sage_db_path = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), "..", "..", "memories", "sage_memory.db"
-                )
-                if os.path.exists(_sage_db_path):
-                    _sage_db = _AMS(_sage_db_path, is_readonly=True)
-                    manifest_sage = _get_manifest(_sage_db, today)
-                    _sage_db.close()
+                row      = selene.db.get_daily_manifest(today)
+                manifest = (row.get("summary", "") if row else "") or "(No manifest compiled for today yet.)"
             except Exception:
-                pass
+                manifest = "(No manifest compiled for today yet.)"
 
             await websocket.send_json({
                 "type": "memory_files",
                 "data": {
                     "soul":              selene._read_file_safe(soul_path),
-                    "tools_context":     selene._read_file_safe(getattr(selene, "TOOLS_CONTEXT_FILE", selene.TOOLS_CONTEXT_FILE)),
+                    "tools_context":     selene._read_file_safe(getattr(selene, "TOOLS_CONTEXT_FILE", os.path.join(selene.MEMORY_DIR, "tools_context.md"))),
                     "user_profile":      selene._read_file_safe(getattr(selene, "USER_PROFILE_FILE",  os.path.join(selene.MEMORY_DIR, "user_profile.md"))),
                     "character_profile": selene._read_file_safe(getattr(selene, "CHARACTER_PROFILE_FILE", os.path.join(selene.MEMORY_DIR, "character_profile.md"))),
-                    "manifest_selene":   manifest_selene or "(No manifest compiled for today yet.)",
-                    "manifest_sage":     manifest_sage   or "(No manifest compiled for today yet.)",
+                    "manifest":          manifest,
+                    "agent_name":        getattr(selene, "active_agent_name", "Selene"),
                 }
             })
         else:

@@ -40,6 +40,38 @@ class LLMCaller:
         print(f"[LLMCaller]: endpoint -> {self.chat_url}")
         print(f"[LLMCaller]: model    -> '{self.model_name}'")
 
+    # ── Internal helpers ───────────────────────────────────────────────────────
+
+    def _post(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        POST to chat/completions. If the model returns 400 and the payload
+        includes logprobs (not supported by all models), retry once without it.
+        Sets self.last_entropy from logprobs if available.
+        """
+        self.last_entropy = None
+        try:
+            response = httpx.post(self.chat_url, json=payload, headers=self.headers, timeout=120.0)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400 and "logprobs" in payload:
+                payload = {k: v for k, v in payload.items() if k not in ("logprobs", "top_logprobs")}
+                print("[LLMCaller]: logprobs rejected (400) — retrying without logprobs")
+                response = httpx.post(self.chat_url, json=payload, headers=self.headers, timeout=120.0)
+                response.raise_for_status()
+            else:
+                raise
+        data = response.json()
+        # Extract entropy from logprobs if present
+        try:
+            logprobs_obj = data["choices"][0].get("logprobs")
+            if logprobs_obj and "content" in logprobs_obj:
+                lp_list = [t.get("logprob", 0.0) for t in logprobs_obj["content"] if t.get("logprob") is not None]
+                if lp_list:
+                    self.last_entropy = -(sum(lp_list) / len(lp_list))
+        except Exception:
+            pass
+        return data
+
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def call_llm(
@@ -70,7 +102,27 @@ class LLMCaller:
         messages: list = [{"role": "system", "content": final_system_prompt}]
         if history:
             messages.extend(list(history))
-        messages.append({"role": "user", "content": input_data})
+
+        # Enforce strict user/assistant alternation required by chat-format models.
+        # 1. First non-system message must be user — drop leading assistant turns.
+        while len(messages) > 1 and messages[1].get("role") == "assistant":
+            messages.pop(1)
+        # 2. Merge consecutive same-role messages (fold them into one).
+        sanitized: list = [messages[0]]  # keep system
+        for m in messages[1:]:
+            if sanitized and sanitized[-1].get("role") == m.get("role"):
+                sanitized[-1] = dict(sanitized[-1])
+                sanitized[-1]["content"] = sanitized[-1]["content"] + "\n" + m["content"]
+            else:
+                sanitized.append(m)
+        messages = sanitized
+
+        # 3. Append current user input, merging if history tail is also user.
+        if messages and messages[-1].get("role") == "user":
+            messages[-1] = dict(messages[-1])
+            messages[-1]["content"] = messages[-1]["content"] + "\n" + input_data
+        else:
+            messages.append({"role": "user", "content": input_data})
 
         self.last_entropy = None
         payload: Dict[str, Any] = {
@@ -88,27 +140,7 @@ class LLMCaller:
             payload["tool_choice"] = tool_choice
 
         try:
-            response = httpx.post(
-                self.chat_url,
-                json=payload,
-                headers=self.headers,
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            data    = response.json()
-            
-            # Extract logprobs and calculate Raw Entropy
-            try:
-                logprobs_obj = data["choices"][0].get("logprobs")
-                if logprobs_obj and "content" in logprobs_obj:
-                    content_logprobs = logprobs_obj["content"]
-                    logprobs_list = [t.get("logprob", 0.0) for t in content_logprobs if t.get("logprob") is not None]
-                    if logprobs_list:
-                        mean_logprob = sum(logprobs_list) / len(logprobs_list)
-                        self.last_entropy = -mean_logprob
-            except Exception as e:
-                print(f"[LLMCaller]: Failed to parse logprobs: {e}")
-                
+            data    = self._post(payload)
             message = data["choices"][0]["message"]
 
             # If the model wants to call a tool, return the full message dict
@@ -117,8 +149,16 @@ class LLMCaller:
                 return message
 
             # Standard text response — return plain string (backward-compatible).
-            content          = (message.get("content") or "").strip()
-            reasoning        = (message.get("reasoning_content") or "").strip()
+            content   = (message.get("content") or "").strip()
+            reasoning = (message.get("reasoning_content") or "").strip()
+
+            # Strip agent-name prefix + optional timestamp the model copies from
+            # history formatting: "Selene: (2026-06-07) ..." or "Sage: ..."
+            import re as _re
+            content = _re.sub(
+                r'^(?:Selene|Sage|Ghost)\s*:\s*(?:\([^)]*\)\s*)?',
+                '', content, count=1
+            ).strip()
 
             # Nemotron-3, Qwen3, DeepSeek-R1 and similar reasoning models return
             # chain-of-thought in a separate `reasoning_content` field alongside
@@ -198,22 +238,7 @@ class LLMCaller:
             payload["tool_choice"] = tool_choice
 
         try:
-            response = httpx.post(self.chat_url, json=payload, headers=self.headers, timeout=120.0)
-            response.raise_for_status()
-            data = response.json()
-            
-            # Extract logprobs and calculate Raw Entropy
-            try:
-                logprobs_obj = data["choices"][0].get("logprobs")
-                if logprobs_obj and "content" in logprobs_obj:
-                    content_logprobs = logprobs_obj["content"]
-                    logprobs_list = [t.get("logprob", 0.0) for t in content_logprobs if t.get("logprob") is not None]
-                    if logprobs_list:
-                        mean_logprob = sum(logprobs_list) / len(logprobs_list)
-                        self.last_entropy = -mean_logprob
-            except Exception as e:
-                print(f"[LLMCaller]: Failed to parse logprobs: {e}")
-                
+            data    = self._post(payload)
             message = data["choices"][0]["message"]
 
             # Reasoning models (Qwen3, DeepSeek-R1) may leave content empty and

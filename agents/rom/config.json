@@ -1,9 +1,11 @@
 {
-  "name": "Pixel",
+  "name": "ROM",
   "title": "The Dreamer",
-  "domain": "Image Generation, Visual Creative Direction, and Aesthetic Systems",
-  "model": "PLACEHOLDER",
-  "color": "#f472b6",
+  "domain": "Visual Interpretation, Creative Direction, and Cross-Agent Image Description",
+  "model": "WarlordHermes/Huihui-Qwen3-VL-8B-Instruct-Creative-v0.4",
+  "color_primary": "#7dd3fc",
+  "color_secondary": "#fde047",
+  "color_text": "#0c4a6e",
   "tools": [
     "manifest_manager",
     "todo",
@@ -18,5 +20,5 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "pixel_core_page"
+  "notion_page_id": "rom_core_page"
 }

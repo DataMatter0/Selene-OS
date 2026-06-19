@@ -138,7 +138,8 @@ def _execute_tool_and_respond(triggered_name: str, triggered_args: Any,
 # ── Message router ────────────────────────────────────────────────────────────
 
 def process_message(user_input: str, disable_tools: bool = False,
-                    suggestion_warning: str = "") -> str:
+                    suggestion_warning: str = "",
+                    response_mode: str = "CONVERSATIONAL") -> str:
     """
     Routes a user message: slash command → phrase suggestion gate → normal chat.
     suggestion_warning is injected when the suggestion layer flagged low confidence.
@@ -158,7 +159,8 @@ def process_message(user_input: str, disable_tools: bool = False,
 
         elif decision["decision"] == "suggest":
             return selene.chat(user_input, disable_tools=True,
-                               _suggestion_warning=decision.get("warning", ""))
+                               _suggestion_warning=decision.get("warning", ""),
+                               _response_mode=response_mode)
 
         # decision == "pass" — fall through to normal chat
 
@@ -231,7 +233,7 @@ def process_message(user_input: str, disable_tools: bool = False,
                       else f"I tried to use the {triggered_name} tool, but something went wrong: {result.get('message')}"
         return f"<tool_reasoning turn_id=\"{turn_id}\">\n{thought_log}\n</tool_reasoning>\n{final_reply}"
 
-    return selene.chat(user_input, disable_tools=disable_tools)
+    return selene.chat(user_input, disable_tools=disable_tools, _response_mode=response_mode)
 
 
 # ── Memory helpers ────────────────────────────────────────────────────────────
@@ -255,7 +257,7 @@ def set_last_message_status(session_id: str, status: str) -> None:
                 break
 
 
-def update_memory_and_energy(user_input: str, response: str, chunks: list = None) -> None:
+def update_memory_and_energy(user_input: str, response: str, chunks: list | None = None, response_mode: str = "CONVERSATIONAL") -> None:
     """
     Commit a turn to working_memory.
 
@@ -302,4 +304,4 @@ def update_memory_and_energy(user_input: str, response: str, chunks: list = None
         if len(selene.working_memory) > window:
             selene.working_memory = selene.working_memory[-window:]
 
-    selene.maybe_extract_memory(user_input, clean)
+    selene.maybe_extract_memory(user_input, response, reflective_turn=(response_mode.upper() == "REFLECT"))

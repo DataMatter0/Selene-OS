@@ -309,16 +309,45 @@ class MoodObserver:
     def get_mood_description(self) -> str:
         dominant_expr, intensity = self.get_dominant_mood()
         feeling = self.last_prompt_feeling
-        if dominant_expr == "neutral" and feeling is None:
+        no_dominant = dominant_expr == "neutral"
+        no_feeling  = feeling is None or abs(self.last_prompt_deltas.get(feeling, 0.0)) <= 0.03
+
+        # Largest emotional shift last turn (last_applied tracks per-moodlet delta)
+        shift_entries = [(m, v) for m, v in self.last_applied.items() if abs(v) > 0.02]
+        shift_entries.sort(key=lambda x: abs(x[1]), reverse=True)
+        top_shift = shift_entries[0] if shift_entries else None
+
+        if no_dominant and no_feeling and top_shift is None:
             return "You're feeling neutral and calm right now."
+
         parts = []
-        if dominant_expr != "neutral":
+
+        # Primary emotion
+        if not no_dominant:
             dominant_moodlet = next((m for m in MOODLETS if EXPRESSION_MAP.get(m) == dominant_expr), None)
             if dominant_moodlet:
-                parts.append(f"You're feeling {'quite' if intensity > 0.6 else 'somewhat' if intensity > 0.3 else 'a little'} {dominant_moodlet}")
-        if feeling and abs(self.last_prompt_deltas.get(feeling, 0.0)) > 0.03:
+                parts.append(
+                    f"You're feeling {'quite' if intensity > 0.6 else 'somewhat' if intensity > 0.3 else 'a little'} {dominant_moodlet}"
+                )
+
+        # Immediate prompt reaction
+        if not no_feeling:
             fd = abs(self.last_prompt_deltas.get(feeling, 0.0))
-            parts.append(f"This message made you feel {'strongly' if fd > 0.08 else 'stirred some' if fd > 0.05 else 'a hint of'} {feeling}")
+            parts.append(
+                f"This message stirred {'strong' if fd > 0.08 else 'some' if fd > 0.05 else 'a hint of'} {feeling} in you"
+            )
+
+        # Largest shift from last turn — only mention if meaningful and different from dominant
+        if top_shift:
+            shift_moodlet, shift_val = top_shift
+            if abs(shift_val) > 0.04 and shift_moodlet != next(
+                (m for m in MOODLETS if EXPRESSION_MAP.get(m) == dominant_expr), None
+            ):
+                direction = "rose" if shift_val > 0 else "eased"
+                parts.append(
+                    f"Your {shift_moodlet} {direction} noticeably last turn"
+                )
+
         return ". ".join(parts) + "." if parts else "You're feeling neutral and calm right now."
 
 # ── Model-Agnostic Emotion Classifier Interface ─────────────────────────────

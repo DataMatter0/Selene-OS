@@ -77,6 +77,13 @@ def get_state() -> dict:
             "conversation_id":   selene.active_conversation_id,
             "conversation_name": selene.active_conversation_name,
             "active_agent":      active_agent,
+            "agent_meta": {
+                "name":          getattr(selene, "active_agent_name",  active_agent.capitalize()),
+                "title":         getattr(selene, "active_agent_title", ""),
+                "domain":        getattr(selene, "active_agent_domain", ""),
+                "color_primary": getattr(selene, "active_agent_color", "#ffffff"),
+                "slug":          getattr(selene, "active_agent_slug",  active_agent),
+            },
             "tools":             getattr(selene, "allowed_tools", []),
             "dashboard_layout":  layout,
             "mood_index":        _cached_emotion["mood_index"],

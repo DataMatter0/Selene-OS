@@ -1,16 +1,17 @@
 {
-  "name": "Echo",
-  "title": "The Narrator",
-  "domain": "Narrative Writing, World-Building, Lore, and Story Architecture",
-  "model": "PLACEHOLDER",
-  "color": "#fbbf24",
+  "name": "RAM",
+  "title": "The Creative",
+  "domain": "Image Generation, Emotional Expression, and Visual Artistry",
+  "model": "black-forest-labs/FLUX.1-schnell",
+  "color_primary": "#f9a8d4",
+  "color_secondary": "#fde047",
+  "color_text": "#831843",
   "tools": [
     "manifest_manager",
     "todo",
     "status_checker",
     "meta_insight",
-    "knowledge_manager",
-    "runereader"
+    "generate_image"
   ],
   "memory_db": "memory.db",
   "prompt_file": "prompt.txt",
@@ -19,5 +20,5 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "echo_core_page"
+  "notion_page_id": "ram_core_page"
 }

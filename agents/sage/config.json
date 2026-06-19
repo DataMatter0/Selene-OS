@@ -3,7 +3,9 @@
   "title": "The Oracle",
   "domain": "Research, Development, Backlog Orchestration, and Technical Synthesis",
   "model": "google/gemma-3n-e4b",
-  "color": "#60a5fa",
+  "color_primary": "#a78bfa",
+  "color_secondary": "#7c3aed",
+  "color_text": "#f5f3ff",
   "tools": [
     "knowledge_manager",
     "manifest_manager",

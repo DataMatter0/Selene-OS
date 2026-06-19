@@ -196,6 +196,78 @@ UI  →  WS  →  handlers/chat.py
 
 ---
 
+## agents/
+
+The Pantheon — six self-contained agent folders. Each agent is fully isolated: its own memory DB, prompt file, user/character profiles, tool context, insights log, and manifest state. No agent names are hardcoded in Python logic — names live only in `config.json` and the folder name itself.
+
+**Folder layout (uniform across all six):**
+```
+agents/
+  selene/   sage/   akari/   yami/   rom/   ram/
+    config.json         — identity, model, tools, file keys
+    prompt.txt          — system prompt / soul file (gitignored)
+    user_profile.md     — Ghost's profile as seen by this agent
+    character_profile.md — agent's own character/personality doc
+    tools_context.md    — tool usage guide for this agent
+    insights.md         — ephemeral realizations from REFLECT turns
+    manifest_state.json — task graph state
+    memory.db           — SQLite memory store (runtime, gitignored)
+```
+
+**`config.json` schema:**
+```json
+{
+  "name": "Selene",
+  "title": "The Voice",
+  "domain": "...",
+  "model": "google/gemma-3n-e4b",
+  "color_primary": "#2dd4bf",
+  "color_secondary": "#0f766e",
+  "color_text": "#f0fdfa",
+  "tools": ["memory_tool", "manifest_manager", ...],
+  "memory_db": "memory.db",
+  "prompt_file": "prompt.txt",
+  "user_profile": "user_profile.md",
+  "character_profile": "character_profile.md",
+  "tools_context": "tools_context.md",
+  "insights": "insights.md",
+  "manifest_state": "manifest_state.json",
+  "notion_page_id": "selene_core_page"
+}
+```
+
+**`swap_agent(slug)` in `selene_brain/llm_chat.py`:**
+Resolves everything from `agents/{slug}/config.json`. No hardcoded paths.
+```python
+agent_dir = os.path.join(_AGENTS_DIR, slug)
+config    = json.load(open(f"{agent_dir}/config.json"))
+def _ap(key, fallback):
+    return os.path.join(agent_dir, config.get(key, fallback))
+self.prompt_path            = _ap("prompt_file", "prompt.txt")
+self.USER_PROFILE_FILE      = _ap("user_profile", "user_profile.md")
+self.CHARACTER_PROFILE_FILE = _ap("character_profile", "character_profile.md")
+self.TOOLS_CONTEXT_FILE     = _ap("tools_context", "tools_context.md")
+self.MEMORY_DIR             = agent_dir
+self.db                     = AgentMemoryStore(_ap("memory_db", "memory.db"))
+```
+
+**`agent_meta` in `server/state.py`:**
+`get_state()` exposes name, title, domain, color_primary, and slug to the frontend so the UI can update dynamically on every agent swap without hardcoding anything in the renderer.
+
+**Model stack (v0.5):**
+| Agent | Model | Family |
+|-------|-------|--------|
+| Selene | `google/gemma-3n-e4b` | Gemma |
+| Sage | `google/gemma-3n-e4b` | Gemma |
+| Akari | `DevQuasar/Tesslate.UIGEN-T2-7B-GGUF:Q4_K_M` | Qwen (UI fine-tune) |
+| Yami | `mistralai/Ministral-8B-Instruct-2410` | Mistral |
+| ROM | `WarlordHermes/Huihui-Qwen3-VL-8B-Instruct-Creative-v0.4` | Qwen VL |
+| RAM | `black-forest-labs/FLUX.1-schnell` | Diffusion (no LLM slot) |
+
+Three distinct LLM families (Gemma, Qwen, Mistral) across five LLM agents. RAM runs FLUX for image generation — no language model.
+
+---
+
 ## Key invariants
 
 - **`selene_ref` is None until `_init_selene()` completes.** Every handler guards with `if selene:` or `if selene is None: return True`. The WS connection is accepted before init finishes so the UI can connect immediately.
@@ -210,10 +282,13 @@ UI  →  WS  →  handlers/chat.py
 
 ```
 .env                          Live API keys (Anthropic, Notion, Google, Exa, Spotify)
-configs/soul.md               Selene's personal identity prompt
-configs/sage_soul.md          Sage's personal identity prompt
-configs/selene_prompt.txt     Full Selene system prompt
-configs/sage_prompt.txt       Full Sage system prompt
+configs/soul.md               Selene's personal identity prompt (legacy)
+configs/sage_soul.md          Sage's personal identity prompt (legacy)
+configs/selene_prompt.txt     Full Selene system prompt (legacy)
+configs/sage_prompt.txt       Full Sage system prompt (legacy)
+agents/*/memory.db            Per-agent SQLite memory stores
+agents/*/prompt.txt           Per-agent soul/system prompt files
+agents/*/soul.md              Per-agent soul docs
 memories/                     Extracted long-term memory files
 conversations/                Saved conversation JSON
 selene_state.json             Runtime state snapshot

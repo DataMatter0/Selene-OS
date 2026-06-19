@@ -21,39 +21,20 @@ class LMStudioManager:
 
     def list_models(self) -> List[Dict[str, Any]]:
         """
-        Lists all models available to LM Studio.
+        Lists loaded models via the OpenAI-compat /v1/models endpoint.
+        /api/v1/models is not a documented LM Studio endpoint.
         """
         try:
-            response = httpx.get(f"{self.api_base_url}/models", headers=self.headers, timeout=10)
+            response = httpx.get(f"{self.openai_base_url}/models", headers=self.headers, timeout=10)
             response.raise_for_status()
             data = response.json()
-
-            model_list = []
-            # The structure of this response can vary between LM Studio versions.
-            # This handles `{"data": [...]}` (newer), `{"models": [...]}` (older), and a raw `[...]`.
-            if isinstance(data, dict):
-                if "data" in data:
-                    model_list = data["data"]
-                elif "models" in data:
-                    model_list = data["models"]
-            elif isinstance(data, list):
-                model_list = data
-
-            if not model_list and data:
-                # Log unexpected structures for easier debugging in the future.
-                print(f"\n[LM Studio Manager Warning] Unexpected response structure from list_models: {data}")
-                return []
-
-            # Normalize the model identifier to a 'path' key for consistency.
-            # The management API uses 'key', while the OpenAI API uses 'id'.
-            for model in model_list:
-                if 'key' in model and 'path' not in model:
-                    model['path'] = model['key']
-            
+            model_list = data.get("data", []) if isinstance(data, dict) else data
+            for m in model_list:
+                if 'path' not in m:
+                    m['path'] = m.get('id', '')
             return model_list
         except (httpx.RequestError, json.JSONDecodeError) as e:
-            # Provide more specific feedback on connection failure.
-            print(f"\n[LM Studio Manager Error] Could not list models. Is the server running at {self.api_base_url}? Details: {e}")
+            print(f"\n[LM Studio Manager Error] Could not list models: {e}")
             return []
 
     def get_loaded_model_info(self) -> Optional[Dict[str, Any]]:
@@ -137,9 +118,8 @@ class LMStudioManager:
         one lands regardless of the LM Studio version installed.
         """
         payloads = [
-            {"identifier": identifier},
-            {"model":       identifier},
-            {"instance_id": identifier},
+            {"instance_id": identifier},  # per docs
+            {"model":       identifier},  # fallback
         ]
         for payload in payloads:
             try:
@@ -162,30 +142,8 @@ class LMStudioManager:
         return False
 
     def get_loaded_instance_id(self) -> Optional[str]:
-        """
-        Queries the management API (/api/v1/models) for a currently loaded
-        model and returns the best identifier to pass to unload_model().
-        Checks several field names since they vary by LM Studio version.
-        """
-        try:
-            response = httpx.get(f"{self.api_base_url}/models", headers=self.headers, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-
-            model_list: List[Dict[str, Any]] = []
-            if isinstance(data, dict):
-                model_list = data.get("data", data.get("models", []))
-            elif isinstance(data, list):
-                model_list = data
-
-            for model in model_list:
-                state = model.get("state", "loaded")   # absent = assume loaded
-                if state in ("loaded", "loading", ""):
-                    for key in ("identifier", "instanceId", "instance_id", "path", "key", "id"):
-                        val = model.get(key)
-                        if val:
-                            return str(val)
-            return None
-        except Exception as e:
-            print(f"\n[LM Studio Manager Error] get_loaded_instance_id failed: {e}")
-            return None
+        """Returns the id of the currently loaded model via /v1/models."""
+        loaded = self.get_loaded_model_info()
+        if loaded:
+            return loaded.get('id') or loaded.get('path') or None
+        return None

@@ -10,11 +10,12 @@ async def handle(websocket, data: dict, loop) -> bool:
     msg_type = data.get("type")
     selene   = _st.selene_ref
 
-    if not msg_type.startswith("knowledge_") and msg_type not in ("knowledge_get_state",):
+    if not msg_type.startswith("knowledge_"):
         return False
 
     if not selene:
-        return False
+        await websocket.send_json({"type": "error", "message": "Selene not initialised."})
+        return True
 
     k_tool = selene.tool_router.tools.get("knowledge_manager")
 

@@ -94,7 +94,7 @@ class PromptBuilderMixin:
         parts = [soul, role_anchor]
         if character_profile:
             parts.append(
-                f"{sep}YOUR RELATIONSHIP WITH GHOST — internalized knowledge, not a prompt to act on{sep}"
+                f"{sep}WHO YOU ARE — your self-knowledge, relationships, and expressed inner life{sep}"
                 f"{character_profile}"
             )
         if user_profile:
