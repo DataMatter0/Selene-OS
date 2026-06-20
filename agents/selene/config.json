@@ -2,7 +2,7 @@
   "name": "Selene",
   "title": "The Voice",
   "domain": "Communication, Interpretation, Emotional Continuity, and Daily Habits",
-  "model": "google/gemma-3n-e4b",
+  "model": "Selene/Sage",
   "color_primary": "#2dd4bf",
   "color_secondary": "#0f766e",
   "color_text": "#f0fdfa",
@@ -26,5 +26,6 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "selene_core_page"
+  "notion_page_id": "selene_core_page",
+  "model_path": "google/gemma-3n-e4b"
 }

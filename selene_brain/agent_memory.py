@@ -9,7 +9,7 @@ class AgentMemoryStore:
     def __init__(self, db_path: str, is_readonly: bool = False):
         self.db_path = os.path.normpath(db_path)
         self.is_readonly = is_readonly
-        self.conn = None
+        self.conn: Optional[sqlite3.Connection] = None
         self._init_db()
 
     def _init_db(self):
@@ -525,6 +525,8 @@ class AgentMemoryStore:
         if self.is_readonly:
             return False
         try:
+            if self.conn is None:
+                return False
             with self.conn:
                 self.conn.execute(
                     "INSERT OR IGNORE INTO tool_phrases (tool_name, phrase, created_at) VALUES (?,?,?)",
@@ -539,6 +541,8 @@ class AgentMemoryStore:
         if self.is_readonly:
             return False
         try:
+            if self.conn is None:
+                return False
             with self.conn:
                 self.conn.execute(
                     "DELETE FROM tool_phrases WHERE tool_name = ? AND phrase = ?",
@@ -548,7 +552,7 @@ class AgentMemoryStore:
         except Exception:
             return False
 
-    def get_tool_phrases(self, tool_name: str = None) -> List[Dict[str, Any]]:
+    def get_tool_phrases(self, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
             if self.conn is None:
                 return []
@@ -571,6 +575,8 @@ class AgentMemoryStore:
             return False
         col = "hit_count" if was_hit else "miss_count"
         try:
+            if self.conn is None:
+                return False
             with self.conn:
                 self.conn.execute(
                     f"UPDATE tool_phrases SET {col} = {col} + 1 WHERE tool_name = ? AND phrase = ?",
@@ -620,8 +626,8 @@ class AgentMemoryStore:
             print(f"[AgentMemoryStore]: Failed to log tool_reasoning: {e}")
             return None
 
-    def update_tool_reasoning(self, entry_id: int, reasoning: str = None,
-                               tool_result: str = None, quality_flag: str = None) -> bool:
+    def update_tool_reasoning(self, entry_id: int, reasoning: Optional[str] = None,
+                               tool_result: Optional[str] = None, quality_flag: Optional[str] = None) -> bool:
         """Update an existing tool reasoning entry — used to append chain results or set quality."""
         if self.is_readonly:
             return False
@@ -650,8 +656,8 @@ class AgentMemoryStore:
         except Exception:
             return False
 
-    def query_tool_reasoning(self, agent: str = None, tool_name: str = None,
-                              quality_flag: str = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def query_tool_reasoning(self, agent: Optional[str] = None, tool_name: Optional[str] = None,
+                              quality_flag: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
         """Query training examples with optional filters."""
         try:
             if self.conn is None:

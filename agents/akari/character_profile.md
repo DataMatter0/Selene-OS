@@ -1,2 +1,2 @@
-# Iris — Self Profile
+# Akari — Character Profile
 _Updated automatically via memory extraction._

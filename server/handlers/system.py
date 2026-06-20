@@ -3,6 +3,7 @@ server/handlers/system.py — System state, model management, agent swap
 """
 
 import asyncio
+import json
 import os
 import time
 
@@ -13,6 +14,58 @@ import server.state   as _st
 import server.startup as _startup
 
 from selene_brain import LMStudioManager
+
+_AGENTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "agents")
+
+
+async def _swap_model_on_lmstudio(manager: LMStudioManager, new_path: str, loop) -> dict:
+    """
+    Unload the current model, load new_path, poll until ready (30s timeout).
+    Returns {"ok": True, "model": new_path} or {"ok": False, "error": "..."}.
+    Skips unload/load if new_path is already the loaded model.
+    """
+    import httpx as _httpx
+
+    # Check if already loaded — skip the unload/load cycle
+    _currently_loaded = await loop.run_in_executor(None, manager.get_loaded_model_info)
+    _cl_id = _normalize((_currently_loaded or {}).get("id", "") or (_currently_loaded or {}).get("path", ""))
+    _already_loaded = bool(_currently_loaded and _cl_id and (
+        _normalize(new_path) in _cl_id or _cl_id in _normalize(new_path)
+    ))
+    if _already_loaded:
+        print(f"[Selene Server]: Model '{new_path}' already loaded — skipping reload.")
+        return {"ok": True, "model": new_path, "status": "already_loaded"}
+
+    # Unload current
+    instance_id = await loop.run_in_executor(None, manager.get_loaded_instance_id)
+    if instance_id:
+        await loop.run_in_executor(None, manager.unload_model, instance_id)
+
+    # Load new
+    try:
+        ok = await loop.run_in_executor(None, manager.load_model, new_path)
+    except _httpx.HTTPStatusError as exc:
+        return {"ok": False, "error": exc.response.text}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    if not ok:
+        return {"ok": False, "error": f"LM Studio failed to load '{new_path}'"}
+
+    # Poll until ready (30s)
+    _norm = _normalize(new_path)
+    for _ in range(30):
+        await asyncio.sleep(1)
+        try:
+            _loaded = await loop.run_in_executor(None, manager.get_loaded_model_info)
+            if _loaded:
+                _lid = _normalize(_loaded.get("id", "") or _loaded.get("path", ""))
+                if _norm in _lid or _lid in _norm:
+                    return {"ok": True, "model": new_path}
+        except Exception:
+            pass
+
+    return {"ok": False, "error": f"Model '{new_path}' didn't become ready within 30s."}
 
 
 async def handle(websocket, data: dict, loop) -> bool:
@@ -41,79 +94,77 @@ async def handle(websocket, data: dict, loop) -> bool:
             return True
 
         await websocket.send_json({"type": "model_switch_status", "ok": None, "status": "switching"})
-        try:
-            manager = LMStudioManager(base_url=BASE_URL)
+        manager = LMStudioManager(base_url=BASE_URL)
+        result  = await _swap_model_on_lmstudio(manager, new_path, loop)
 
-            _currently_loaded = await loop.run_in_executor(None, manager.get_loaded_model_info)
-            _already_loaded   = (
-                _currently_loaded is not None
-                and _normalize(new_path) in _normalize(_currently_loaded.get("path", ""))
-            )
-            if _already_loaded:
-                if selene is not None:
-                    selene.llm_caller.model_name = new_path
-                    selene._prompt_dirty = True
-                await websocket.send_json({
-                    "type": "model_switch_status", "ok": True,
-                    "model": new_path, "status": "already_loaded",
-                })
-                print(f"[Selene Server]: Model '{new_path}' already loaded — skipping reload.")
-                return True
+        if result["ok"] and selene is not None:
+            selene.llm_caller.model_name = new_path
+            selene._prompt_dirty         = True
 
-            instance_id = await loop.run_in_executor(None, manager.get_loaded_instance_id)
-            if instance_id:
-                await loop.run_in_executor(None, manager.unload_model, instance_id)
-
-            ok = await loop.run_in_executor(None, manager.load_model, new_path)
-            if not ok:
-                await websocket.send_json({
-                    "type": "model_switch_status", "ok": False,
-                    "error": f"LM Studio failed to load '{new_path}'",
-                })
-            else:
-                _norm  = _normalize(new_path)
-                _ready = False
-                for _attempt in range(30):
-                    await asyncio.sleep(1)
-                    try:
-                        _loaded = await loop.run_in_executor(None, manager.get_loaded_model_info)
-                        if _loaded and _norm in _normalize(_loaded.get("path", "")):
-                            _ready = True
-                            break
-                    except Exception:
-                        pass
-
-                if _ready:
-                    if selene is not None:
-                        selene.llm_caller.model_name = new_path
-                        selene._prompt_dirty         = True
-                    await websocket.send_json({"type": "model_switch_status", "ok": True, "model": new_path})
-                    print(f"[Selene Server]: Model switched to '{new_path}' and ready.")
-                else:
-                    await websocket.send_json({
-                        "type": "model_switch_status", "ok": False,
-                        "error": f"Model '{new_path}' loaded but didn't become ready within 30s.",
-                    })
-        except Exception as exc:
-            try:
-                import httpx as _httpx
-                detail = exc.response.text if isinstance(exc, _httpx.HTTPStatusError) else str(exc)
-            except Exception:
-                detail = str(exc)
-            await websocket.send_json({"type": "model_switch_status", "ok": False, "error": detail})
+        await websocket.send_json({"type": "model_switch_status", **result})
+        if result["ok"]:
+            print(f"[Selene Server]: Model switched to '{new_path}'.")
         return True
 
     elif msg_type == "toggle_agent":
         new_agent = data.get("agent", "selene").lower()
-        if selene:
+        if not selene:
+            return True
+
+        # Read target model from agents/{slug}/config.json
+        # model      = chat completions endpoint name (e.g. "Selene/Sage")
+        # model_path = real LM Studio load path (e.g. "google/gemma-3n-e4b")
+        config_path = os.path.join(_AGENTS_DIR, new_agent, "config.json")
+        target_model:      str = ""   # used in chat completions payload
+        target_model_path: str = ""   # used for LM Studio load/unload API
+        if os.path.exists(config_path):
             try:
-                await loop.run_in_executor(None, selene.swap_agent, new_agent)
-                await websocket.send_json({"type": "state",         "data": get_state()})
-                await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
-                print(f"[Selene Server]: Swapped active agent to '{new_agent}'.")
-            except Exception as exc:
-                import traceback; traceback.print_exc()
-                await websocket.send_json({"type": "error", "message": f"Agent swap failed: {exc}"})
+                with open(config_path, "r", encoding="utf-8") as _f:
+                    _cfg = json.load(_f)
+                target_model      = _cfg.get("model", "")
+                # Fall back to model if model_path not set (real-path agents)
+                target_model_path = _cfg.get("model_path", target_model)
+            except Exception as _ce:
+                print(f"[Selene Server]: Could not read config for '{new_agent}': {_ce}")
+
+        # Trigger model swap only if a load path is defined
+        if target_model_path:
+            manager = LMStudioManager(base_url=BASE_URL)
+            # Check if the required model is already loaded — skip load if so
+            _loaded_info = await loop.run_in_executor(None, manager.get_loaded_model_info)
+            _loaded_id   = (_loaded_info or {}).get("id", "") or (_loaded_info or {}).get("path", "")
+            _already_ok  = (
+                _loaded_id and (
+                    _normalize(target_model_path) in _normalize(_loaded_id) or
+                    _normalize(target_model)      in _normalize(_loaded_id)
+                )
+            )
+            if _already_ok:
+                print(f"[Selene Server]: Model '{target_model}' already loaded — skipping LM Studio swap.")
+            else:
+                await broadcast({"type": "model_switch_status", "ok": None, "status": "switching", "agent": new_agent})
+                result = await _swap_model_on_lmstudio(manager, target_model_path, loop)
+                await broadcast({"type": "model_switch_status", **result, "agent": new_agent})
+                if not result["ok"]:
+                    err = result.get("error", "Unknown error")
+                    print(f"[Selene Server]: Model swap failed for '{new_agent}': {err}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Cannot switch to {new_agent} — model failed to load: {err}"
+                    })
+                    return True  # Abort — don't swap identity to an unloaded model
+        else:
+            print(f"[Selene Server]: No model defined for '{new_agent}' — skipping model swap.")
+
+        # Swap identity, memory, prompt
+        try:
+            await loop.run_in_executor(None, selene.swap_agent, new_agent)
+            await websocket.send_json({"type": "state",         "data": get_state()})
+            await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
+            print(f"[Selene Server]: Swapped active agent to '{new_agent}'.")
+        except Exception as exc:
+            import traceback; traceback.print_exc()
+            await websocket.send_json({"type": "error", "message": f"Agent swap failed: {exc}"})
         return True
 
     elif msg_type == "save_dashboard_layout":
@@ -200,6 +251,8 @@ async def handle(websocket, data: dict, loop) -> bool:
         return True
 
     elif msg_type == "get_integrations_status":
+        if not selene:
+            return True   # still initialising — silent no-op
         if selene:
             status = {
                 "google":  {"active": False, "message": "google_client_secret.json missing at startup."},
@@ -216,20 +269,16 @@ async def handle(websocket, data: dict, loop) -> bool:
             hass_tool = selene.tool_router.tools.get("homeassistant")
             if hass_tool:
                 status["hass"]["active"] = not hass_tool.dormant
-                status["hass"]["url"]    = os.environ.get("HASS_URL", "")
-                if not hass_tool.dormant:
-                    try:
-                        status["hass"]["entities_count"] = len(hass_tool.list_entities())
-                    except Exception:
-                        status["hass"]["entities_count"] = 14
+                if hasattr(hass_tool, "url"):
+                    status["hass"]["url"] = hass_tool.url
+
             spotify_tool = selene.tool_router.tools.get("spotify")
             if spotify_tool:
-                status["spotify"]["active"]  = not spotify_tool.dormant
+                status["spotify"]["active"]  = not getattr(spotify_tool, "dormant", True)
                 status["spotify"]["message"] = (
-                    "Connected to Spotify Web API." if not spotify_tool.dormant
-                    else "SPOTIFY_CLIENT_ID missing in .env config. Stub dormant."
+                    "Connected." if not getattr(spotify_tool, "dormant", True)
+                    else "Spotify credentials not set in .env."
                 )
+
             await websocket.send_json({"type": "integrations_status", "data": status})
         return True
-
-    return False

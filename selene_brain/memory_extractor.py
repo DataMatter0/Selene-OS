@@ -23,6 +23,9 @@ class MemoryExtractorMixin:
         CHARACTER_PROFILE_CAP: int
         COMPACTION_THRESHOLD: int
         COMPACTION_KEEP_RECENT: int
+        active_agent_name: str
+        USER_PROFILE_FILE: str
+        CHARACTER_PROFILE_FILE: str
 
         def _read_file_safe(self, path: str, default: str = "") -> str: ...
         def _refresh_system_prompt(self) -> None: ...

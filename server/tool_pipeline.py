@@ -238,6 +238,132 @@ def process_message(user_input: str, disable_tools: bool = False,
 
 # ── Memory helpers ────────────────────────────────────────────────────────────
 
+
+# ── Multi-step todo execution loop ────────────────────────────────────────────
+
+def run_todo_loop(user_input: str, websocket, loop_ref, response_mode: str = "CONVERSATIONAL"):
+    """
+    Drives an active todo plan to completion, executing each tool step
+    automatically and pausing for LLM responses on null-tool steps.
+
+    Called from chat.py after process_message() when a todo plan was just
+    created. Runs synchronously in an executor thread; sends WS messages via
+    asyncio.run_coroutine_threadsafe.
+
+    Returns list of (description, result) tuples for all steps executed.
+    """
+    import asyncio as _asyncio
+    import json as _json
+
+    selene = _selene()
+    if selene is None:
+        return []
+
+    todo = selene.tool_router.tools.get("todo")
+    if todo is None:
+        return []
+
+    def _ws_send(payload: dict):
+        _asyncio.run_coroutine_threadsafe(
+            websocket.send_json(payload), loop_ref
+        )
+
+    results = []
+    MAX_STEPS = 20   # hard cap — prevents runaway loops
+    step_count = 0
+
+    while step_count < MAX_STEPS:
+        plan    = todo.get_plan()
+        steps   = plan.get("steps", [])
+        current = next((s for s in steps if s.get("status") == "in_progress"), None)
+
+        if current is None:
+            break
+
+        step_count += 1
+        desc      = current.get("description", f"Step {step_count}")
+        tool_name = current.get("tool")
+        tool_args = current.get("args") or {}
+
+        _ws_send({"type": "thought", "step": "todo_step",
+                  "title": f"Step {step_count}: {desc}",
+                  "content": f"Tool: {tool_name or 'LLM'}"})
+
+        if tool_name:
+            # ── Tool step — execute directly ───────────────────────────────
+            accumulated = todo.get_accumulated_results()
+            if accumulated and isinstance(tool_args, dict):
+                args_str = _json.dumps(tool_args)
+                if "<will be filled" in args_str or "<prior_result>" in args_str:
+                    args_str = args_str.replace(
+                        "<will be filled from prior step>", accumulated[:800]
+                    ).replace("<prior_result>", accumulated[:800])
+                    try:
+                        tool_args = _json.loads(args_str)
+                    except Exception:
+                        pass
+
+            allowed = getattr(selene, "allowed_tools", None)
+            if allowed is not None and tool_name not in allowed:
+                step_result = f"[Blocked] Tool '{tool_name}' is not in this agent's allowed tools."
+            else:
+                result = selene.tool_router.route_and_execute(tool_name, tool_args)
+                from .utils import _format_tool_data
+                step_result = _format_tool_data(result.get("data", "")) if result.get("status") == "success" \
+                              else f"[Tool error] {result.get('message', 'unknown error')}"
+
+            todo.store_step_result(current["id"], step_result)
+            results.append((desc, step_result))
+
+            _ws_send({"type": "thought", "step": "todo_result",
+                      "title": f"Done: {desc}", "content": step_result[:400]})
+
+            advance = todo.execute({"command": "advance"})
+            if advance.get("all_done"):
+                _ws_send({"type": "thought", "step": "todo_complete",
+                          "title": "Plan complete",
+                          "content": f"All steps finished for: {plan.get('task', '')}"})
+                break
+
+        else:
+            # ── LLM step — generate a response with prior context ──────────
+            accumulated = todo.get_accumulated_results()
+            llm_prompt = (
+                f"Multi-step task in progress: {plan.get('task', '')}\n\n"
+                + (f"Prior steps completed:\n{accumulated}\n\n" if accumulated else "")
+                + f"Current step: {desc}\n\n"
+                + f"Ghost's original request: {user_input}"
+            )
+
+            try:
+                llm_result = selene.chat(
+                    llm_prompt,
+                    disable_tools=True,
+                    _response_mode=response_mode,
+                )
+                from .utils import clean_xml_tags
+                llm_clean = clean_xml_tags(llm_result)
+            except Exception as e:
+                llm_clean = f"[LLM step error: {e}]"
+
+            todo.store_step_result(current["id"], llm_clean)
+            results.append((desc, llm_clean))
+
+            active_agent_name = getattr(selene, "active_agent_name", "selene").lower()
+            _ws_send({"type": "response", "content": llm_clean, "agent": active_agent_name})
+
+            advance = todo.execute({"command": "advance"})
+            if advance.get("all_done"):
+                break
+
+    try:
+        _ws_send({"type": "todo_state", "data": todo.get_plan()})
+    except Exception:
+        pass
+
+    return results
+
+
 def set_last_message_status(session_id: str, status: str) -> None:
     """
     Update the status of the last user message in both SQLite and working_memory.

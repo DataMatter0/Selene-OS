@@ -1,2 +1,2 @@
-# Forge — Self Profile
+# Yami — Character Profile
 _Updated automatically via memory extraction._

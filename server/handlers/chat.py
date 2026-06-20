@@ -10,7 +10,7 @@ from server.state        import get_state, broadcast, clients, _cached_emotion
 from server.utils        import clean_xml_tags, split_response_chunks, extract_presence_decision
 from server.tool_pipeline import (
     process_message, set_last_message_status, update_memory_and_energy,
-    _execute_tool_and_respond,
+    _execute_tool_and_respond, run_todo_loop,
 )
 import server.state as _st
 
@@ -25,6 +25,56 @@ async def handle(websocket, data: dict, loop) -> bool:
         user_input = data.get("content", "").strip()
         if not user_input:
             return True
+
+        # Pending idea routing intercept (Sage) — check before tool confirmation
+        if selene and getattr(selene, "pending_idea_routing", None):
+            _pending_route = selene.pending_idea_routing
+            _lower = user_input.strip().lower()
+            _KEEP  = {"keep", "keep it", "keep here", "save here", "sage", "me", "mine", "here"}
+            _YES   = {"yes", "yeah", "yep", "sure", "ok", "okay", "go ahead", "do it", "y",
+                      "route it", "send it", "that works", "sounds good"}
+            # Check if user named an agent slug directly
+            _AGENT_SLUGS = {"Selene/Sage", "Akari", "Yami", "ROM", "RAM"}
+            _named_agent = next((s for s in _AGENT_SLUGS if s in _lower), None)
+
+            is_keep = _lower in _KEEP or any(_lower.startswith(k) for k in _KEEP)
+            is_yes  = _lower in _YES or any(_lower.startswith(y) for y in _YES)
+
+            if is_keep or is_yes or _named_agent:
+                selene.pending_idea_routing = None
+                distilled     = _pending_route["distilled"]
+                original_text = _pending_route["original_text"]
+                suggestion    = _pending_route["suggestion"]
+
+                if is_keep or (is_yes is False and not _named_agent):
+                    _target = "sage"
+                    _command = "save_idea_to_agent"
+                elif _named_agent and _named_agent not in ("Selene/Sage", "me"):
+                    _target  = _named_agent
+                    _command = "save_idea_to_agent"
+                else:
+                    _target  = suggestion["agent"] if is_yes else "Selene/Sage"
+                    _command = "save_idea_to_agent"
+
+                _route_res = await loop.run_in_executor(
+                    None, selene.tool_router.route_and_execute, "manifest_manager",
+                    {"command": _command, "agent": _target,
+                     "distilled": distilled, "original_text": original_text}
+                )
+                _inner = _route_res.get("data", "")
+                if isinstance(_inner, str):
+                    _reply = _inner
+                elif _target == "Selene/Sage":
+                    _reply = f"Saved to my own sketchpad — {distilled.get('title', 'idea')} is staying here."
+                else:
+                    _reply = f"Routed **{distilled.get('title', 'idea')}** to {_target.capitalize()}'s sketchpad."
+
+                update_memory_and_energy(user_input, _reply)
+                _agent_name = getattr(selene, "active_agent_name", "Selene").lower()
+                await websocket.send_json({"type": "response", "content": _reply, "agent": _agent_name})
+                await websocket.send_json({"type": "state", "data": get_state()})
+                return True
+            # Ambiguous reply — fall through to normal chat, keep pending
 
         # Pending tool confirmation intercept
         if selene and hasattr(selene, "tool_suggestion") and selene.tool_suggestion:
@@ -49,9 +99,9 @@ async def handle(websocket, data: dict, loop) -> bool:
         # Agent ping routing (@selene / @sage)
         target_agent = None
         if "@selene" in user_input.lower():
-            target_agent = "selene"
+            target_agent = "Selene/Sage"
         elif "@sage" in user_input.lower():
-            target_agent = "sage"
+            target_agent = "Selene/Sage"
 
         if target_agent and selene:
             current_agent = getattr(selene, "active_agent_name", "Selene").lower()
@@ -84,6 +134,7 @@ async def handle(websocket, data: dict, loop) -> bool:
 
         # Presence Layer
         gating = "RESPOND"
+        choice: dict = {}
         choice_latency = 0.0
         if selene:
             t_choice_start = time.perf_counter()
@@ -213,6 +264,38 @@ async def handle(websocket, data: dict, loop) -> bool:
         if selene:
             selene.thought_callback = None
 
+        # ── Multi-step todo loop ───────────────────────────────────────────
+        # If process_message caused a todo plan to be created (the model called
+        # the todo tool with plan command), drive the remaining steps now.
+        if selene:
+            _todo = selene.tool_router.tools.get("todo")
+            if _todo:
+                _plan = _todo.get_plan()
+                _steps = _plan.get("steps", [])
+                # A plan is "just started" if it has steps and the first one is
+                # still in_progress (the model planned but hasn't executed yet)
+                # AND at least one step has a tool defined (otherwise it's a
+                # pure LLM plan the model will handle via its response)
+                _has_tool_steps = any(s.get("tool") for s in _steps)
+                _current = next((s for s in _steps if s.get("status") == "in_progress"), None)
+                if _current and _has_tool_steps:
+                    _todo_results = await loop.run_in_executor(
+                        None,
+                        lambda: run_todo_loop(user_input, websocket, loop, _response_mode)
+                    )
+                    # If the loop produced results, update memory with a summary
+                    if _todo_results:
+                        _summary = "\n".join(
+                            f"• {desc}: {res[:200]}" for desc, res in _todo_results
+                        )
+                        update_memory_and_energy(
+                            user_input,
+                            f"[Multi-step plan complete]\n{_summary}",
+                            response_mode=_response_mode,
+                        )
+                        await websocket.send_json({"type": "state", "data": get_state()})
+                        return True
+
         presence_mode = extract_presence_decision(response)
         if presence_mode in ("observe", "ignore"):
             receipt_status = "observed" if presence_mode == "observe" else "ignored"
@@ -332,6 +415,4 @@ async def handle(websocket, data: dict, loop) -> bool:
             })
             print("[Selene Server]: Memory cleared by UI (legacy).")
         await websocket.send_json({"type": "state", "data": get_state()})
-        return True
-
-    return False
+     

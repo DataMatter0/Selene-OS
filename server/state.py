@@ -64,11 +64,7 @@ def get_state() -> dict:
         }
     with selene.lock:
         active_agent = getattr(selene, "active_agent_name", "Selene").lower()
-        layout = getattr(selene, "dashboard_layout", {
-            "left": "fused_manifest",
-            "center": "main_chat",
-            "right": "status_panel"
-        })
+        layout = selene.dashboard_layout  # uses per-agent property
         return {
             "status":            "writing" if selene.is_writing_autonomously else "idle",
             "creative_energy":   selene.creative_energy,

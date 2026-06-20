@@ -220,7 +220,70 @@ The thin `selene_server.py` now only: wires FastAPI + CORS, registers REST route
 
 ---
 
+## [v0.6] 2026-06-19 — Boot Select, Model Swap, UI Polish
+
+### Added
+
+**Boot agent select screen**
+- Full-screen PANTHEON grid on every launch — pick your agent before the UI loads
+- Skips model swap only if `seleneState.active_agent` already matches the selection
+- All other selections trigger `toggle_agent` + swap overlay immediately
+
+**Model swap overlay**
+- Full-screen blur overlay with animated spinner while LM Studio loads a model
+- 6 orbiting dots, one per Pantheon member, each in their primary color
+- Overlay holds until `seleneState.active_agent` confirms the swap (not just `ok: true`)
+- 12s safety timeout clears overlay if state update never arrives
+- Error path clears after 5s with toast
+
+**`model_path` field in agent configs**
+- Separates LM Studio chat endpoint name (`model`) from load API path (`model_path`)
+- Selene/Sage use `Selene/Sage` endpoint name, `google/gemma-3n-e4b` load path
+- Akari, Yami, ROM use their actual LM Studio display names for both fields
+- `toggle_agent` checks if target model already loaded — skips unload/load cycle if so
+
+**Akari theme overhaul**
+- Dark background (`#0a0510`), deep plum atmo blobs, pink/yellow accents, light text
+- Fixes white/light background that made the OS unreadable when Akari was active
+- `LeftPanel` now reads `agent_meta.color_primary` from live state — all agents render in their configured color instead of only Selene/Sage being recognized
+
+**Branding**
+- All `SELENE_OS` references renamed to `THE PANTHEON` throughout the UI
+
+### Changed
+
+- `system.py` `get_integrations_status` — was missing `return True`, causing every call to fall through to "Unknown message type" error. Fixed + completed truncated handler block (Spotify tool check + `send_json`)
+- `server/handlers/system.py` `toggle_agent` — uses `model_path` for LM Studio load API, `model` for chat completions payload. Already-loaded check compares both `id` and `path` fields from LM Studio response
+- `startup.py` — broadcasts `ready` + `conversations` after `_init_selene` completes so frontend re-fetches all state after the boot race window
+- `index.html` — `prevSeleneStatusRef` starts `null` (was `"offline"`); `null → idle` transition now correctly triggers `fetchAllState`
+- `TopBar.jsx` — NAV dropdown button removed entirely
+- `ToolsView.jsx` — `story` tab gated on `runereader` tool (was always visible); only Selene, Sage, ROM see it
+- All six agent `character_profile.md` files reset — old codenames (Forge, Pixel, Echo) removed, clean stubs with correct agent names
+- All six agent `tools_context.md` files updated from Selene's real version — replaces placeholder stubs
+- `agents/akari/soul.md`, `yami/soul.md`, `rom/soul.md`, `ram/soul.md` — new functional stubs: domain, autonomy, purpose
+- SWAP button in Dashboard slot headers: uniform `36×18px` matching adjacent size-step buttons
+- `agents/selene/memory.db` — was corrupt (disk image malformed, likely from move). Deleted; will regenerate clean on next boot
+
+### Fixed
+
+- Boot race condition: UI received `status: offline` on connect, sent data-fetch requests before `_init_selene` completed, all handlers returned "Selene not initialised" errors. Fixed via: 1.5s delay on `connState` effect, `ready` broadcast from server, `prevSeleneStatusRef` transition hook, silent no-op in all handlers during init
+- `get_integrations_status` missing `return True` — every call fell through to dispatcher's unknown-type error handler
+- LM Studio model name mismatch — agent configs had HuggingFace paths, LM Studio endpoint is named `Selene/Sage`. Added `model`/`model_path` split
+- `schedule_manager` registration warning (`MEMORY_DIR not set`) — fires before `swap_agent` sets paths. Non-blocking but noted
+- Swap overlay dismissed too early — now waits for `seleneState.active_agent` to confirm identity before clearing
+
+### Safe to commit
+- `agents/*/config.json`, `agents/*/soul.md`, `agents/*/character_profile.md`, `agents/*/tools_context.md`, `agents/*/user_profile.md`
+- `server/handlers/system.py`, `server/startup.py`, `server/state.py`
+- `renderer/index.html`, `renderer/index.css`
+- `renderer/components/TopBar.jsx`, `renderer/components/LeftPanel.jsx`, `renderer/components/Dashboard.jsx`, `renderer/components/ToolsView.jsx`
+- `CHANGELOG.md`
+- Do NOT commit: `.env`, `agents/*/memory.db`, `agents/*/prompt.txt`, `agents/*/soul.md` (private), `memories/`, `conversations/`, `selene_state.json`
+
+---
+
 ## Unreleased
 
 _Track in-progress work here. Move to a versioned block when committing._
+
 

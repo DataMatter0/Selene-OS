@@ -1,2 +1,2 @@
-# Echo — Self Profile
+# RAM — Character Profile
 _Updated automatically via memory extraction._

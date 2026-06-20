@@ -1,2 +1,2 @@
 # Ghost — User Profile
-_Updated automatically by Pixel._
+_Updated automatically by ROM._

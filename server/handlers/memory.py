@@ -36,7 +36,7 @@ async def handle(websocket, data: dict, loop) -> bool:
                 }
             })
         else:
-            await websocket.send_json({"type": "error", "message": "Selene not initialised."})
+            pass  # server still initialising — frontend will retry on "ready" event
         return True
 
     elif msg_type == "save_memory":

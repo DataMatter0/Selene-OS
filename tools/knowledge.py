@@ -41,7 +41,11 @@ class KnowledgeTool(BaseTool):
 
     def __init__(self, agent_state: Any):
         self.agent_state = agent_state
-        self.db_path = os.path.join(self.agent_state.MEMORY_DIR, "knowledge_board_state.json")
+        # Shared store — all agents write here, tagged by slug
+        _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _shared_dir   = os.path.join(_project_root, "agents", "shared")
+        os.makedirs(_shared_dir, exist_ok=True)
+        self.db_path  = os.path.join(_shared_dir, "knowledge_board_state.json")
         self.on_state_change = None
         self._init_database()
 
@@ -278,8 +282,10 @@ class KnowledgeTool(BaseTool):
         state = self.load_state()
         import uuid
         card_id = f"K_{uuid.uuid4().hex[:6].upper()}"
+        agent_slug = getattr(self.agent_state, "active_agent_slug", "unknown")
         new_card = {
             "id":               card_id,
+            "agent":            agent_slug,
             "title":            title.strip(),
             "content":          content.strip(),
             "extended_content": extended_content,   # full text; None if not set

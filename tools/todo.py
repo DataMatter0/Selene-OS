@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from .schema import BaseTool, atomic_write
 
 if TYPE_CHECKING:
-    from selene_brain import LLMChat
+    from selene_brain.agent_protocol import AgentState
 
 
 class TodoTool(BaseTool):
@@ -33,18 +33,35 @@ class TodoTool(BaseTool):
     """
     name = "todo"
     description = (
-        "Selene's autonomous task execution planner. Use this when tackling any request "
-        "that requires 3+ distinct steps. Plan first, then advance through steps one by one.\n"
-        "Commands:\n"
-        "  plan    — {\"command\":\"plan\",\"task\":\"goal summary\",\"steps\":[\"step 1\",\"step 2\",...]}\n"
-        "            Creates the plan. First step is automatically set in_progress.\n"
-        "  advance — {\"command\":\"advance\"}\n"
-        "            Marks the current in_progress step completed and starts the next.\n"
-        "  status  — {\"command\":\"status\"} — compact progress summary for chat\n"
+        "Selene's autonomous multi-step execution engine. Use when a request needs 3+ distinct steps.\n"
+        "Plan once, then the runtime drives each step automatically.\n\n"
+        "COMMANDS:\n"
+        "  plan — Create a step plan. Each step can be a direct tool call or an LLM response.\n"
+        "    {\n"
+        "      \"command\": \"plan\",\n"
+        "      \"task\": \"overall goal summary\",\n"
+        "      \"steps\": [\n"
+        "        {\n"
+        "          \"description\": \"human-readable step label\",\n"
+        "          \"tool\": \"tool_name_or_null\",\n"
+        "          \"args\": {\"command\": \"...\" /*, other args */}\n"
+        "        },\n"
+        "        { \"description\": \"LLM step — no tool needed\", \"tool\": null, \"args\": null }\n"
+        "      ]\n"
+        "    }\n"
+        "  Steps with a \"tool\" field are executed automatically in sequence.\n"
+        "  Steps with \"tool\": null pause for an LLM response before continuing.\n\n"
+        "  advance — {\"command\":\"advance\"} — manually advance one step (rarely needed)\n"
+        "  status  — {\"command\":\"status\"} — compact progress summary\n"
         "  update  — {\"command\":\"update\",\"id\":\"<id>\",\"status\":\"pending|in_progress|completed|skipped\"}\n"
-        "            Manual override for a specific step.\n"
-        "  clear   — {\"command\":\"clear\"} — wipe the plan when the task is done\n"
-        "  list    — {\"command\":\"list\"} — full step list"
+        "  clear   — {\"command\":\"clear\"} — wipe when done\n"
+        "  list    — {\"command\":\"list\"} — full step list\n\n"
+        "EXAMPLE — research + summarise + save:\n"
+        "  steps: [\n"
+        "    {\"description\": \"Search web\", \"tool\": \"runereader\", \"args\": {\"command\": \"read\", \"url\": \"...\"}},\n"
+        "    {\"description\": \"Summarise findings\", \"tool\": null, \"args\": null},\n"
+        "    {\"description\": \"Save to knowledge board\", \"tool\": \"knowledge_manager\", \"args\": {\"command\": \"add_card\", \"content\": \"<will be filled from prior step\"}}\n"
+        "  ]"
     )
     input_type  = "json"
     output_type = "any"
@@ -84,6 +101,23 @@ class TodoTool(BaseTool):
         """Direct access for UI / server handlers."""
         return self._plan.get("steps", [])
 
+
+    def store_step_result(self, step_id: str, result: str) -> None:
+        """Store the output of a completed step so later steps can reference it."""
+        for s in self._plan.get("steps", []):
+            if s["id"] == step_id:
+                s["result"] = result
+                break
+        self._save()
+
+    def get_accumulated_results(self) -> str:
+        """Return all completed step results as context for LLM steps."""
+        lines = []
+        for s in self._plan.get("steps", []):
+            if s.get("status") == "completed" and s.get("result"):
+                lines.append(f"[{s['description']}]\n{s['result']}")
+        return "\n\n".join(lines)
+
     def get_plan(self) -> Dict:
         return self._plan
 
@@ -97,17 +131,35 @@ class TodoTool(BaseTool):
 
         # ── plan ──────────────────────────────────────────────────────────────
         if command == "plan":
-            task  = input_data.get("task", "").strip()
-            steps = [s.strip() for s in input_data.get("steps", []) if str(s).strip()]
-            if not steps:
+            task      = input_data.get("task", "").strip()
+            raw_steps = input_data.get("steps", [])
+            if not raw_steps:
                 return {"error": "plan requires a non-empty 'steps' list."}
             built = []
-            for i, desc in enumerate(steps):
+            for i, step in enumerate(raw_steps):
+                # Accept either a plain string (legacy) or a dict with tool/args
+                if isinstance(step, str):
+                    desc = step.strip()
+                    tool = None
+                    args = None
+                elif isinstance(step, dict):
+                    desc = step.get("description", "").strip() or step.get("desc", "").strip()
+                    tool = step.get("tool") or None
+                    args = step.get("args") or None
+                else:
+                    continue
+                if not desc:
+                    continue
                 built.append({
                     "id":          self._make_id(),
                     "description": desc,
+                    "tool":        tool,   # None = LLM step; str = tool name to auto-execute
+                    "args":        args,   # dict of args to pass to the tool
                     "status":      "in_progress" if i == 0 else "pending",
+                    "result":      None,   # populated after execution
                 })
+            if not built:
+                return {"error": "No valid steps provided."}
             chain_id = str(uuid.uuid4())[:8]
             self._plan = {"task": task, "steps": built, "chain_id": chain_id}
             self._save()

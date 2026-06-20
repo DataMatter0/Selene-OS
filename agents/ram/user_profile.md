@@ -1,2 +1,2 @@
 # Ghost — User Profile
-_Updated automatically by Echo._
+_Updated automatically by RAM._

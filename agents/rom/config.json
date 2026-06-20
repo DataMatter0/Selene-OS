@@ -2,7 +2,7 @@
   "name": "ROM",
   "title": "The Dreamer",
   "domain": "Visual Interpretation, Creative Direction, and Cross-Agent Image Description",
-  "model": "WarlordHermes/Huihui-Qwen3-VL-8B-Instruct-Creative-v0.4",
+  "model": "huihui-qwen3-vl-8b-instruct-creative-v0.4-i1",
   "color_primary": "#7dd3fc",
   "color_secondary": "#fde047",
   "color_text": "#0c4a6e",
@@ -11,7 +11,7 @@
     "todo",
     "status_checker",
     "meta_insight",
-    "knowledge_manager"
+    "runereader"
   ],
   "memory_db": "memory.db",
   "prompt_file": "prompt.txt",
@@ -20,5 +20,6 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "rom_core_page"
+  "notion_page_id": "rom_core_page",
+  "model_path": "huihui-qwen3-vl-8b-instruct-creative-v0.4-i1"
 }

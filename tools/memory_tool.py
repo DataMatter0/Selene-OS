@@ -9,7 +9,7 @@ from .schema import BaseTool
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from selene_brain import LLMChat
+    from selene_brain.agent_protocol import AgentState
 
 
 class ChronicleTool(BaseTool):

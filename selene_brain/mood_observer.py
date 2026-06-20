@@ -310,7 +310,7 @@ class MoodObserver:
         dominant_expr, intensity = self.get_dominant_mood()
         feeling = self.last_prompt_feeling
         no_dominant = dominant_expr == "neutral"
-        no_feeling  = feeling is None or abs(self.last_prompt_deltas.get(feeling, 0.0)) <= 0.03
+        no_feeling  = feeling is None or abs(self.last_prompt_deltas.get(feeling or "", 0.0)) <= 0.03
 
         # Largest emotional shift last turn (last_applied tracks per-moodlet delta)
         shift_entries = [(m, v) for m, v in self.last_applied.items() if abs(v) > 0.02]
@@ -332,7 +332,7 @@ class MoodObserver:
 
         # Immediate prompt reaction
         if not no_feeling:
-            fd = abs(self.last_prompt_deltas.get(feeling, 0.0))
+            fd = abs(self.last_prompt_deltas.get(feeling or "", 0.0))
             parts.append(
                 f"This message stirred {'strong' if fd > 0.08 else 'some' if fd > 0.05 else 'a hint of'} {feeling} in you"
             )

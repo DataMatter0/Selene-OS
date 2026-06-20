@@ -21,22 +21,26 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from .schema import BaseTool
 
 if TYPE_CHECKING:
-    from selene_brain import LLMChat
+    from selene_brain.agent_protocol import AgentState
 
 
 class ManifestTool(BaseTool):
     """A tool for managing the Obsidian Journal & dynamic Task Manifest."""
     name = "manifest_manager"
     description = (
-        "Manages the strategic project development manifest — tasks, priorities, subtasks, dependencies, and guidelines. "
+        "Manages the strategic project development manifest — tasks, ideas, priorities, subtasks, dependencies, and guidelines. "
         "Inputs must be JSON containing a 'command' key. Supported schemas:\n"
         "- View full manifest & tasks:      {\"command\": \"get_manifest\"}\n"
+        "- Save idea from conversation:     {\"command\": \"save_idea\", \"text\": \"Casual description of the idea\"}\n"
+        "- View all saved ideas:            {\"command\": \"get_ideas\"}\n"
+        "- Promote idea to structured task: {\"command\": \"promote_idea\", \"idea_id\": \"I1\"}\n"
         "- Add task from conversational text: {\"command\": \"add_task_from_text\", \"text\": \"Describe task, priority, subtasks, etc.\"}\n"
         "- Structural add task:             {\"command\": \"add_task\", \"description\": \"Task summary\", \"priority\": \"B2\", \"dependencies\": [], \"subtasks\": []}\n"
         "- Toggle task completion:          {\"command\": \"toggle_task\", \"id\": \"T1\"}\n"
         "- Delete task:                     {\"command\": \"delete_task\", \"id\": \"T1\"}\n"
         "- Reorganize manifest via LLM:     {\"command\": \"reorganize\", \"prompt\": \"Optional prioritization focus\"}\n"
-        "- Add priority focus guideline:    {\"command\": \"add_guideline_from_text\", \"text\": \"Guideline text\"}"
+        "- Add priority focus guideline:    {\"command\": \"add_guideline_from_text\", \"text\": \"Guideline text\"}\n"
+        "- Read another agent's manifest:   {\"command\": \"read_agent_manifest\", \"agent\": \"sage\"}"
     )
     input_type = "json"
     output_type = "any"
@@ -66,6 +70,15 @@ class ManifestTool(BaseTool):
         if "organize our roadmap" in normalized or "reorganize the manifest" in normalized or "reorder our tasks" in normalized or "prioritize our manifest" in normalized:
             return {"command": "reorganize", "prompt": user_input}
 
+        _idea_phrases = (
+            "jot that down", "save that idea", "note that down", "make a note of that",
+            "add that to ideas", "save this idea", "log that idea", "capture that idea",
+            "put that in the sketchpad", "sketch that out", "save to ideas",
+            "add this to the sketchpad", "note that idea",
+        )
+        if any(p in normalized for p in _idea_phrases):
+            return {"command": "save_idea", "text": user_input}
+
         return None
 
     # ── State I/O ─────────────────────────────────────────────────────────────
@@ -74,12 +87,12 @@ class ManifestTool(BaseTool):
         # MEMORY_DIR is the agent folder — manifest_state.json lives directly inside it
         state_path = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
         if not os.path.exists(state_path):
-            return {"tasks": [], "philosophies": []}
+            return {"tasks": [], "philosophies": [], "ideas": []}
         try:
             with open(state_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
-            return {"tasks": [], "philosophies": []}
+            return {"tasks": [], "philosophies": [], "ideas": []}
 
     def save_state_json(self, state: dict) -> None:
         state_path = os.path.join(self.agent_state.MEMORY_DIR, "manifest_state.json")
@@ -305,6 +318,279 @@ class ManifestTool(BaseTool):
         self.save_state_json(state)
         return True
 
+
+    # ── Idea sketchpad helpers ────────────────────────────────────────────────
+
+    def generate_next_idea_id(self, state: dict) -> str:
+        max_num = 0
+        for idea in state.get("ideas", []):
+            iid = idea.get("id", "")
+            match = re.match(r"^I(\d+)$", iid, re.IGNORECASE)
+            if match:
+                num = int(match.group(1))
+                if num > max_num:
+                    max_num = num
+        return f"I{max_num + 1}"
+
+    def route_idea_suggestion(self, distilled: dict) -> dict | None:
+        """
+        Sage-only: given a distilled idea dict {title, summary, tags}, ask the
+        LLM whether this idea better fits another agent's domain.
+
+        Reads agent domains from agents/*/config.json at the project root.
+        Returns:
+          {"agent": slug, "name": name, "domain": domain, "reason": str, "confidence": "high"|"low"}
+          or None if the idea fits Sage best (no routing suggestion).
+        """
+        import glob as _glob
+
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Load all agent configs except sage
+        agents_info = []
+        for cfg_path in _glob.glob(os.path.join(_root, "agents", "*", "config.json")):
+            slug = os.path.basename(os.path.dirname(cfg_path))
+            if slug == "sage":
+                continue
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as _f:
+                    cfg = json.load(_f)
+                agents_info.append({
+                    "slug":   slug,
+                    "name":   cfg.get("name", slug.capitalize()),
+                    "domain": cfg.get("domain", ""),
+                })
+            except Exception:
+                continue
+
+        if not agents_info:
+            return None
+
+        roster = "\n".join(
+            f"  {a['slug']} ({a['name']}): {a['domain']}"
+            for a in agents_info
+        )
+
+        idea_text = f"{distilled.get('title', '')}\n{distilled.get('summary', '')}"
+        tags      = ", ".join(distilled.get("tags", [])) or "none"
+
+        prompt = (
+            "You are Sage, the Selene OS orchestrator. Ghost gave you an idea to capture.\n\n"
+            f"IDEA:\n{idea_text}\n\nTAGS: {tags}\n\n"
+            "AGENT ROSTER (slug: domain):\n"
+            f"{roster}\n\n"
+            "Decide: does this idea clearly belong in another agent\'s domain?\n"
+            "Rules:\n"
+            "- Only suggest routing if you\'re confident the idea is a better fit elsewhere.\n"
+            "- If it\'s borderline, ambiguous, or could fit multiple agents, return null.\n"
+            "- Never suggest routing to yourself (sage).\n"
+            "- Confidence: \'high\' = obvious domain match. \'low\' = plausible but not clear.\n\n"
+            "Return ONLY raw JSON, no markdown:\n"
+            "{\"agent\": \"slug\", \"reason\": \"one sentence why\", \"confidence\": \"high\"}"
+            "\nor\n"
+            "null"
+        )
+
+        try:
+            raw = self.agent_state.llm_caller.call_llm(
+                prompt, max_tokens=120, temperature=0.1
+            ).strip()
+            raw = __import__("re").sub(
+                r'<think>[\s\S]*?</think>', '', raw,
+                flags=__import__("re").IGNORECASE
+            ).strip()
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                lines = lines[1:] if lines[0].startswith("```") else lines
+                lines = lines[:-1] if lines and lines[-1].startswith("```") else lines
+                raw = "\n".join(lines).strip()
+
+            if raw.lower() in ("null", "none", ""):
+                return None
+
+            parsed = json.loads(raw)
+            target_slug = parsed.get("agent", "").lower()
+
+            # Find the agent entry
+            match = next((a for a in agents_info if a["slug"] == target_slug), None)
+            if not match:
+                return None
+
+            return {
+                "agent":      target_slug,
+                "name":       match["name"],
+                "domain":     match["domain"],
+                "reason":     parsed.get("reason", ""),
+                "confidence": parsed.get("confidence", "low"),
+            }
+        except Exception as e:
+            print(f"[ManifestTool] route_idea_suggestion failed: {e}")
+            return None
+
+    def save_idea(self, text: str) -> dict:
+        """
+        LLM-distills a casual idea from conversation text and saves it to ideas[].
+        When Sage is the active agent, runs a routing pass first — if the idea
+        clearly belongs to another agent's domain, returns a routing-pending dict
+        instead of saving immediately.
+
+        Returns either:
+          idea dict (saved)       — normal save
+          {"routing_pending": True, "distilled": {...}, "suggestion": {...}}
+                                  — Sage routing suggestion, not yet saved
+        """
+        agent_name = getattr(self.agent_state, "active_agent_name", "Agent")
+        agent_slug = getattr(self.agent_state, "active_agent_slug", "unknown")
+        prompt = (
+            f"You are {agent_name}. Ghost just shared something he wants captured as an idea.\n"
+            "Extract and distill it into a clear, concise idea entry. Do NOT plan or structure it as a task yet — "
+            "just capture the essence of what was said.\n\n"
+            f"INPUT:\n{text}\n\n"
+            "Return a strict JSON object (no markdown) with these fields:\n"
+            "{\n"
+            '  "title": "Short idea headline (5-10 words)",\n'
+            '  "summary": "One to three sentences distilling the core idea",\n'
+            '  "tags": ["optional", "context", "tags"]\n'
+            "}"
+        )
+        try:
+            raw = self.agent_state.llm_caller.call_llm(prompt, max_tokens=512, temperature=0.3).strip()
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                lines = lines[1:] if lines[0].startswith("```") else lines
+                lines = lines[:-1] if lines and lines[-1].startswith("```") else lines
+                raw = "\n".join(lines).strip()
+            data = json.loads(raw)
+        except Exception as e:
+            print(f"[ManifestTool] idea LLM parse failed: {e} — saving raw text")
+            data = {"title": text[:80].strip(), "summary": text.strip(), "tags": []}
+
+        # Sage routing intercept — only if Sage is active
+        if agent_slug == "sage":
+            suggestion = self.route_idea_suggestion(data)
+            if suggestion and suggestion.get("confidence") == "high":
+                return {
+                    "routing_pending": True,
+                    "distilled":       data,
+                    "suggestion":      suggestion,
+                    "original_text":   text,
+                }
+
+        state  = self.load_state_json()
+        new_id = self.generate_next_idea_id(state)
+        idea   = {
+            "id":        new_id,
+            "title":     data.get("title", "").strip(),
+            "summary":   data.get("summary", "").strip(),
+            "tags":      data.get("tags", []),
+            "agent":     agent_slug,
+            "status":    "sketch",          # sketch | promoted
+            "task_id":   None,              # set when promoted to a task
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+        }
+        state.setdefault("ideas", []).append(idea)
+        self.save_state_json(state)
+        return idea
+
+    def save_idea_to_agent(self, target_slug: str, distilled: dict, original_text: str) -> dict:
+        """
+        Write a distilled idea directly to another agent's manifest_state.json.
+        Used by Sage after routing confirmation. Does NOT require Sage gate —
+        the gate was already passed at the confirmation step.
+        """
+        _root       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_path = os.path.join(_root, "agents", target_slug, "manifest_state.json")
+
+        existing: dict = {"tasks": [], "ideas": []}
+        if os.path.exists(target_path):
+            try:
+                with open(target_path, "r", encoding="utf-8") as _f:
+                    existing = json.load(_f)
+            except Exception:
+                pass
+
+        existing.setdefault("ideas", [])
+
+        # Generate ID in target's namespace
+        max_n = 0
+        for idea in existing["ideas"]:
+            _id = idea.get("id", "")
+            if _id.startswith("I") and _id[1:].isdigit():
+                max_n = max(max_n, int(_id[1:]))
+        new_id = f"I{max_n + 1}"
+
+        new_idea = {
+            "id":         new_id,
+            "title":      distilled.get("title", "").strip(),
+            "summary":    distilled.get("summary", "").strip(),
+            "tags":       distilled.get("tags", []),
+            "agent":      target_slug,
+            "routed_by":  "sage",
+            "status":     "sketch",
+            "task_id":    None,
+            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+        }
+        existing["ideas"].append(new_idea)
+
+        try:
+            with open(target_path, "w", encoding="utf-8") as _f:
+                json.dump(existing, _f, indent=2, ensure_ascii=False)
+            return new_idea
+        except Exception as e:
+            return {"error": str(e)}
+
+    def promote_idea(self, idea_id: str) -> dict:
+        """Converts an idea into a structured task and marks it as promoted."""
+        state   = self.load_state_json()
+        idea_id = idea_id.strip().upper()
+        idea    = next((i for i in state.get("ideas", []) if i.get("id", "").upper() == idea_id), None)
+        if not idea:
+            return {"ok": False, "error": f"Idea {idea_id} not found."}
+        if idea.get("status") == "promoted":
+            return {"ok": False, "error": f"Idea {idea_id} already promoted to task {idea.get('task_id')}."}
+
+        # Build a task from the idea using add_task_from_text path
+        text   = f"{idea['title']}\n{idea['summary']}"
+        prompt = (
+            "Convert this rough idea into a structured manifest task.\n\n"
+            f"IDEA:\n{text}\n\n"
+            "Return strict JSON (no markdown):\n"
+            "{\n"
+            '  "title": "Concise task title",\n'
+            '  "description": "Actionable task description",\n'
+            '  "category": "Feature/Bug/Idea",\n'
+            '  "priority": "B",\n'
+            '  "subtasks": []\n'
+            "}"
+        )
+        try:
+            raw = self.agent_state.llm_caller.call_llm(prompt, max_tokens=512, temperature=0.2).strip()
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                lines = lines[1:] if lines[0].startswith("```") else lines
+                lines = lines[:-1] if lines and lines[-1].startswith("```") else lines
+                raw = "\n".join(lines).strip()
+            data = json.loads(raw)
+        except Exception:
+            data = {"title": idea["title"], "description": idea["summary"], "category": "Idea", "priority": "C", "subtasks": []}
+
+        task = self.add_task(
+            title=data.get("title", idea["title"]),
+            description=data.get("description", idea["summary"]),
+            category=data.get("category", "Idea"),
+            priority=data.get("priority", "C"),
+            subtasks=data.get("subtasks", []),
+        )
+        # Mark idea as promoted (load fresh state since add_task saved it)
+        state = self.load_state_json()
+        for i in state.get("ideas", []):
+            if i.get("id", "").upper() == idea_id:
+                i["status"]  = "promoted"
+                i["task_id"] = task["id"]
+                break
+        self.save_state_json(state)
+        return {"ok": True, "idea_id": idea_id, "task": task}
+
     # ── Compilation & sync ────────────────────────────────────────────────────
 
     def compile_manifests(self) -> None:
@@ -375,6 +661,26 @@ class ManifestTool(BaseTool):
                     sub_tid   = sub.get("id", "")
                     sub_title = sub.get("title") or sub.get("description", "")
                     lines.append(f"  - `[x]` {sub_title} `({sub_tid})`")
+
+        # Ideas sketchpad section
+        ideas = state.get("ideas", [])
+        sketch_ideas = [i for i in ideas if i.get("status") != "promoted"]
+        lines.extend(["", "## Ideas Sketchpad"])
+        if not sketch_ideas:
+            lines.append("*(No ideas captured yet)*")
+        else:
+            for idea in sketch_ideas:
+                iid     = idea.get("id", "I?")
+                ititle  = idea.get("title", "")
+                isumm   = idea.get("summary", "")
+                iagent  = idea.get("agent", "")
+                itags   = ", ".join(idea.get("tags", []))
+                idate   = idea.get("created_at", "")
+                lines.append(f"- **[{iid}]** {ititle}  *(from {iagent}, {idate})*")
+                if isumm:
+                    lines.append(f"  > {isumm}")
+                if itags:
+                    lines.append(f"  > Tags: {itags}")
 
         try:
             with open(dev_manifest_path, 'w', encoding='utf-8') as f:
@@ -563,6 +869,205 @@ class ManifestTool(BaseTool):
                 f"the model response: `{type(e).__name__}: {e}`"
             )
 
+
+    # ── Cross-agent manifest write (Sage-only) ──────────────────────────────────
+
+    def write_agent_manifest(self, target_slug: str, tasks: list, ideas: list | None = None) -> dict:
+        """
+        Overwrite another agent's manifest_state.json with the supplied task list.
+        Sage-gated: raises PermissionError if the active agent is not sage.
+        Preserves existing ideas unless explicitly passed.
+        """
+        caller = getattr(self.agent_state, "active_agent_slug", "unknown").lower()
+        if caller != "sage":
+            raise PermissionError(
+                f"write_agent_manifest is restricted to Sage. Current agent: {caller}"
+            )
+        _root       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_path = os.path.join(_root, "agents", target_slug, "manifest_state.json")
+
+        # Load existing state so we can preserve ideas / guidelines if not supplied
+        existing: dict = {"tasks": [], "ideas": []}
+        if os.path.exists(target_path):
+            try:
+                with open(target_path, "r", encoding="utf-8") as _f:
+                    existing = json.load(_f)
+            except Exception:
+                pass
+
+        new_state = {
+            "tasks": tasks,
+            "ideas": ideas if ideas is not None else existing.get("ideas", []),
+        }
+        try:
+            with open(target_path, "w", encoding="utf-8") as _f:
+                json.dump(new_state, _f, indent=2, ensure_ascii=False)
+            return {"ok": True, "agent": target_slug, "task_count": len(tasks)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def reorganize_agent_manifest(self, target_slug: str, user_instruction: str = "") -> str:
+        """
+        Load another agent's manifest, run the LLM reorganizer, write back.
+        Sage-gated.
+        """
+        caller = getattr(self.agent_state, "active_agent_slug", "unknown").lower()
+        if caller != "sage":
+            return f"reorganize_agent_manifest is restricted to Sage. Current agent: {caller}"
+
+        _root       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_path = os.path.join(_root, "agents", target_slug, "manifest_state.json")
+        if not os.path.exists(target_path):
+            return f"No manifest found for agent '{target_slug}'."
+
+        try:
+            with open(target_path, "r", encoding="utf-8") as _f:
+                state = json.load(_f)
+        except Exception as e:
+            return f"Failed to load manifest for '{target_slug}': {e}"
+
+        guidelines = self.read_guidelines()
+        tasks      = state.get("tasks", [])
+        if not tasks:
+            return f"{target_slug.capitalize()}'s manifest has no tasks to reorganize."
+
+        structural_view = []
+        for i, t in enumerate(tasks, 1):
+            entry = {
+                "n":            i,
+                "id":           t.get("id"),
+                "title":        t.get("title") or t.get("description", ""),
+                "description":  t.get("description", "") if t.get("title") else "",
+                "category":     t.get("category", "Feature"),
+                "priority":     t.get("priority", "B").strip()[:1].upper(),
+                "status":       t.get("status"),
+                "dependencies": t.get("dependencies", []),
+                "subtasks": [
+                    {
+                        "id":          s.get("id"),
+                        "title":       s.get("title") or s.get("description", ""),
+                        "description": s.get("description", "") if s.get("title") else "",
+                        "status":      s.get("status", "pending"),
+                    }
+                    for s in t.get("subtasks", [])
+                ],
+            }
+            structural_view.append(entry)
+
+        total_count  = len(tasks)
+        original_ids = {t.get("id") for t in tasks}
+        tasks_json   = json.dumps(structural_view, indent=2)
+        build_context = self.read_build_context()
+
+        prompt = (
+            f"You are Sage, reorganizing {target_slug.capitalize()}'s manifest on behalf of Ghost's Selene OS project.\n\n"
+            f"PROJECT CONTEXT:\n{build_context}\n\n"
+            f"PRIORITIZATION GUIDELINES:\n{guidelines}\n\n"
+            "DIRECTIVE:\n"
+            + (user_instruction if user_instruction else
+               f"Perform a full alignment scan of {target_slug.capitalize()}'s task list. Reorder, reprioritize, and update dependencies so the list is logically coherent.")
+            + f"\n\nCURRENT MANIFEST ({total_count} top-level tasks):\n{tasks_json}\n\n"
+            "RULES:\n"
+            f"1. Return ALL {total_count} top-level tasks — no omissions, no additions. Same IDs.\n"
+            "2. You may reorder them freely. The returned array order becomes the new order.\n"
+            "3. Assign priority codes: A = Bug/Critical, B = Feature/Medium, C = Idea/Low.\n"
+            "4. Update dependencies: a task must not outrank its own blockers.\n"
+            "5. You may restructure subtasks. All subtask IDs must remain accounted for.\n"
+            "6. Preserve 'title', 'description', 'category', 'status' unless restructuring.\n"
+            "7. Return ONLY a raw JSON object. No markdown, no codeblocks, no extra text.\n\n"
+            "OUTPUT FORMAT:\n"
+            "{\n"
+            "  \"tasks\": [\n"
+            "    { \"id\": \"T1\", \"priority\": \"A\", \"dependencies\": [], \"subtasks\": [] },\n"
+            "    ...\n"
+            "  ],\n"
+            "  \"explanation\": \"What changed and why.\"\n"
+            "}"
+        )
+
+        try:
+            raw_response = self.agent_state.llm_caller.call_llm(
+                input_data=prompt,
+                system_prompt=(
+                    "You are a JSON-only manifest reorganizer. "
+                    "Return only the raw JSON object with keys 'tasks' and 'explanation'. "
+                    "No markdown, no codeblocks, no preamble."
+                ),
+                history=[],
+                temperature=0.2,
+                max_tokens=4096,
+            )
+
+            clean = raw_response.strip()
+            if clean.startswith("```"):
+                lines = clean.split("\n")
+                lines = lines[1:] if lines[0].startswith("```") else lines
+                lines = lines[:-1] if lines and lines[-1].startswith("```") else lines
+                clean = "\n".join(lines).strip()
+
+            result      = json.loads(clean)
+            new_tasks   = result.get("tasks", [])
+            explanation = result.get("explanation", "Manifest reorganized.")
+
+            returned_ids = {t.get("id") for t in new_tasks}
+            missing = original_ids - returned_ids
+            extra   = returned_ids - original_ids
+            if missing:
+                return (
+                    f"Reorganization of {target_slug}'s manifest was missing "
+                    f"{len(missing)} task(s): {', '.join(sorted(missing))}. Nothing was saved."
+                )
+            if extra:
+                new_tasks = [t for t in new_tasks if t.get("id") in original_ids]
+
+            original_by_id = {t.get("id"): t for t in tasks}
+            merged_tasks   = []
+            for nt in new_tasks:
+                tid  = nt.get("id")
+                orig = original_by_id[tid].copy()
+                orig["priority"]     = str(nt.get("priority", orig.get("priority", "B"))).strip()[:1].upper()
+                if orig["priority"] not in ["A", "B", "C"]:
+                    orig["priority"] = "B"
+                orig["dependencies"] = nt.get("dependencies", orig.get("dependencies", []))
+                if "subtasks" in nt and isinstance(nt["subtasks"], list):
+                    all_orig_subs = {s.get("id"): s for s in orig.get("subtasks", [])}
+                    rebuilt_subs  = []
+                    seen_sub_ids  = set()
+                    for ns in nt["subtasks"]:
+                        sid = ns.get("id", "")
+                        if sid in all_orig_subs:
+                            rebuilt_subs.append(all_orig_subs[sid])
+                            seen_sub_ids.add(sid)
+                        else:
+                            rebuilt_subs.append({
+                                "id":          sid,
+                                "title":       ns.get("title") or ns.get("description") or "",
+                                "description": ns.get("description", "") if ns.get("title") else "",
+                                "status":      ns.get("status", "pending"),
+                            })
+                            seen_sub_ids.add(sid)
+                    for sid, sub in all_orig_subs.items():
+                        if sid not in seen_sub_ids:
+                            rebuilt_subs.append(sub)
+                    orig["subtasks"] = rebuilt_subs
+                merged_tasks.append(orig)
+
+            # Write back to target agent's manifest
+            write_result = self.write_agent_manifest(
+                target_slug, merged_tasks, ideas=state.get("ideas", [])
+            )
+            if not write_result.get("ok"):
+                return f"Reorganization completed but failed to write: {write_result.get('error')}"
+
+            return f"[{target_slug.capitalize()}] {explanation}"
+
+        except Exception as e:
+            print(f"[Manifest Cross-Agent Reorganizer Error]: {e}")
+            return (
+                f"I tried to reorganize {target_slug}'s manifest but hit an error: "
+                f"`{type(e).__name__}: {e}`"
+            )
+
     # ── Execute (command router) ──────────────────────────────────────────────
 
     def execute(self, input_data: Dict[str, Any]) -> Any:
@@ -742,6 +1247,100 @@ class ManifestTool(BaseTool):
 
         elif command == "reorganize":
             return self.reorganize_manifest_via_llm(input_data.get("prompt", ""))
+
+        elif command == "save_idea":
+            text = input_data.get("text", "").strip()
+            if not text:
+                return "save_idea requires 'text'."
+            result = self.save_idea(text)
+            if result.get("routing_pending"):
+                # Return sentinel so the handler can set pending_idea_routing
+                return result
+            return f"Idea captured as {result['id']}: **{result['title']}**"
+
+        elif command == "save_idea_to_agent":
+            target    = input_data.get("agent", "").strip().lower()
+            distilled = input_data.get("distilled", {})
+            orig_text = input_data.get("original_text", "")
+            if not target or not distilled:
+                return "save_idea_to_agent requires 'agent' and 'distilled'."
+            idea = self.save_idea_to_agent(target, distilled, orig_text)
+            if idea.get("error"):
+                return f"Failed to route idea to {target}: {idea['error']}"
+            return f"Idea routed to {target.capitalize()} as {idea['id']}: **{idea['title']}**"
+
+        elif command == "get_ideas":
+            state = self.load_state_json()
+            ideas = state.get("ideas", [])
+            if not ideas:
+                return "No ideas in the sketchpad yet."
+            lines = []
+            for idea in ideas:
+                status_str = " [PROMOTED]" if idea.get("status") == "promoted" else ""
+                lines.append(f"[{idea['id']}]{status_str} {idea['title']} — {idea['summary'][:120]}")
+            return "\n".join(lines)
+
+        elif command == "promote_idea":
+            idea_id = input_data.get("idea_id", "").strip()
+            if not idea_id:
+                return "promote_idea requires 'idea_id'."
+            result = self.promote_idea(idea_id)
+            if result.get("ok"):
+                task = result["task"]
+                return f"Idea {idea_id} promoted to task {task['id']}: **{task['title']}**"
+            return f"promote_idea failed: {result.get('error')}"
+
+        elif command == "read_agent_manifest":
+            target = input_data.get("agent", "").strip().lower()
+            if not target:
+                return "read_agent_manifest requires 'agent' slug."
+            _root       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            target_path = os.path.join(_root, "agents", target, "manifest_state.json")
+            if not os.path.exists(target_path):
+                return f"No manifest found for agent '{target}'."
+            try:
+                with open(target_path, "r", encoding="utf-8") as _f:
+                    data = json.load(_f)
+                tasks = data.get("tasks", [])
+                ideas = data.get("ideas", [])
+                lines = [f"## {target.capitalize()} Manifest"]
+                lines.append(f"Tasks: {len(tasks)} | Ideas: {len(ideas)}")
+                lines.append("")
+                if tasks:
+                    lines.append("### Tasks")
+                    for t in tasks:
+                        lines.append(f"- [{t.get('id')}] [{t.get('priority','B')}] {t.get('title') or t.get('description','')}")
+                if ideas:
+                    sketch = [i for i in ideas if i.get("status") != "promoted"]
+                    if sketch:
+                        lines.append("")
+                        lines.append("### Ideas Sketchpad")
+                        for i in sketch:
+                            lines.append(f"- [{i['id']}] {i['title']} — {i['summary'][:100]}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"Failed to read manifest for '{target}': {e}"
+
+        elif command == "write_agent_manifest":
+            target = input_data.get("agent", "").strip().lower()
+            if not target:
+                return "write_agent_manifest requires 'agent' slug."
+            tasks  = input_data.get("tasks", [])
+            ideas  = input_data.get("ideas", None)
+            try:
+                result = self.write_agent_manifest(target, tasks, ideas)
+                if result.get("ok"):
+                    return f"Wrote {result['task_count']} tasks to {target}'s manifest."
+                return f"write_agent_manifest failed: {result.get('error')}"
+            except PermissionError as _pe:
+                return str(_pe)
+
+        elif command == "reorganize_agent_manifest":
+            target = input_data.get("agent", "").strip().lower()
+            if not target:
+                return "reorganize_agent_manifest requires 'agent' slug."
+            prompt = input_data.get("prompt", "")
+            return self.reorganize_agent_manifest(target, prompt)
 
         elif command == "get_manifest":
             active_agent = getattr(self.agent_state, "active_agent_name", "Selene").lower()

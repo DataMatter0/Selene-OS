@@ -1,2 +1,2 @@
 # Ghost — User Profile
-_Updated automatically by Forge._
+_Updated automatically by Yami._

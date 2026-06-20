@@ -16,7 +16,7 @@ from typing import Optional
 
 from fastapi import FastAPI
 
-from .config  import BASE_URL, DESIRED_MODEL, _normalize
+from .config  import BASE_URL
 from .state   import set_selene, broadcast, get_state, _state_broadcaster, clients
 from selene_brain import LLMChat, LMStudioManager
 
@@ -107,8 +107,11 @@ async def _timer_poller() -> None:
 
 def _init_selene() -> None:
     """
-    Blocking initialisation: checks LM Studio, loads the desired model,
-    instantiates LLMChat, and starts the autonomy monitor thread.
+    Blocking initialisation: instantiates LLMChat (which calls swap_agent("selene")
+    and reads the model from agents/selene/config.json), then starts supporting systems.
+    No longer attempts to pre-load a model — LM Studio should have Selene's model
+    ready, or the first chat call will surface a clear error. Model loading is
+    triggered by toggle_agent when the user switches agents from the UI.
     Called from a thread-pool executor so it doesn't block the event loop.
     """
     from . import state as _s
@@ -120,50 +123,18 @@ def _init_selene() -> None:
     except Exception as db_err:
         print(f"[Selene Server Error]: Database initialization failed: {db_err}")
 
+    # Check LM Studio reachability (informational only — don't block boot)
     print("[Selene Server]: Contacting LM Studio...")
     manager = LMStudioManager(base_url=BASE_URL)
-
-    loaded      = manager.get_loaded_model_info()
-    norm_target = _normalize(DESIRED_MODEL)
-    loaded_path = loaded.get("path", "") if loaded else ""
-    active_path: Optional[str] = None
-
-    if loaded and norm_target in _normalize(loaded_path):
-        print(f"[Selene Server]: Desired model already loaded -- {loaded_path}")
-        active_path = loaded_path
+    loaded  = manager.get_loaded_model_info()
+    if loaded:
+        print(f"[Selene Server]: LM Studio online — loaded model: {loaded.get('path', loaded.get('id', '?'))}")
     else:
-        if loaded:
-            print(f"[Selene Server]: A different model is loaded ('{loaded_path}').")
-        elif loaded is None:
-            print("[Selene Server]: Server is offline or no model is loaded.")
+        print("[Selene Server]: LM Studio offline or no model loaded — booting in degraded mode.")
 
-        print(f"[Selene Server]: Attempting to load model -- {DESIRED_MODEL}")
-        try:
-            if manager.load_model(DESIRED_MODEL):
-                active_path = DESIRED_MODEL
-                print(f"[Selene Server]: Model \'{DESIRED_MODEL}\' loaded successfully.")
-                time.sleep(5)
-            else:
-                print(f"[Selene Server]: Failed to load desired model \'{DESIRED_MODEL}\'.")
-                if loaded_path:
-                    print(f"[Selene Server]: Using already loaded model as fallback -- {loaded_path}")
-                    active_path = loaded_path
-                else:
-                    # LM Studio has nothing loaded — boot Selene in degraded mode
-                    # so manifest, memory, tools, and agent-switch still work.
-                    active_path = DESIRED_MODEL
-                    print(f"[Selene Server]: No model loaded. Booting in degraded mode with \'{active_path}\'.")
-        except Exception as load_exc:
-            print(f"[Selene Server]: load_model raised: {load_exc}")
-            active_path = loaded_path or DESIRED_MODEL
-            print(f"[Selene Server]: Booting in degraded mode with \'{active_path}\'.")
-
-    if not active_path:
-        # Absolute last resort — should never reach here
-        active_path = DESIRED_MODEL
-        print(f"[Selene Server]: Falling back to configured model name \'{active_path}\' (degraded).")
-
-    selene = LLMChat(base_url=BASE_URL, model_name=active_path)
+    # LLMChat.__init__ calls swap_agent("selene"), which reads
+    # agents/selene/config.json and sets llm_caller.model_name automatically.
+    selene = LLMChat(base_url=BASE_URL, model_name="")
     selene.is_running = True
     set_selene(selene)
 
@@ -188,14 +159,14 @@ def _init_selene() -> None:
         setattr(k_tool, "on_state_change", handle_change)
 
     from selene_brain.tool_suggestion import ToolSuggestionLayer
-    selene.tool_suggestion           = ToolSuggestionLayer(selene)
-    selene.pending_tool_confirmation = None
+    setattr(selene, "tool_suggestion",           ToolSuggestionLayer(selene))
+    setattr(selene, "pending_tool_confirmation", None)
     print("[Selene Server]: ToolSuggestionLayer initialised.")
 
     autonomy_thread = threading.Thread(target=selene._autonomy_monitor, daemon=True)
     autonomy_thread.start()
 
-    print(f"[Selene Server]: Selene is online  *  model: {active_path}")
+    print(f"[Selene Server]: Selene is online  *  model: {selene.llm_caller.model_name}")
 
 
 @asynccontextmanager
@@ -222,7 +193,12 @@ async def lifespan(app: FastAPI):
                 )
             except Exception as exc:
                 print(f"[Selene Server]: Discord bot failed to start — {exc}")
-            await broadcast({"type": "state", "data": get_state()})
+            # Broadcast a "ready" event so the frontend knows init is complete
+        # even if it already received an "offline" state on first connect.
+        await broadcast({"type": "state",  "data": get_state()})
+        await broadcast({"type": "ready",  "data": get_state()})
+        if selene is not None:
+            await broadcast({"type": "conversations", "data": selene.list_conversations()})
 
     asyncio.create_task(_start_selene_background())
     asyncio.create_task(_state_broadcaster())

@@ -153,42 +153,127 @@ class ToolSuggestionLayer:
             pass
         return None
 
-    # ── Binary YES/NO gate ────────────────────────────────────────────────────
+    # ── Structured tool intent classifier ───────────────────────────────────────
 
     def ask_model_binary(self, tool_name: str, user_input: str) -> Tuple[bool, float]:
         """
-        Ask the model: should I use this tool right now?
-        Returns (should_use: bool, raw_entropy: float).
+        Legacy shim — calls ask_model_tool_decision scoped to one tool.
+        Returns (should_use, entropy) for backward compatibility.
         """
-        tool_desc = ""
+        result = self.ask_model_tool_decision(user_input, tool_hint=tool_name)
+        matched = result.get("tool") == tool_name
+        intent  = result.get("intent", "indirect")
+        # Map: direct match → high-confidence yes; indirect → low confidence; no match → no
+        if matched and intent == "direct":
+            return (True, 0.1)
+        elif matched and intent == "indirect":
+            return (True, 0.5)
+        return (False, 1.0)
+
+    def ask_model_tool_decision(
+        self,
+        user_input: str,
+        tool_hint: str = "",
+    ) -> Dict:
+        """
+        Structured tool intent classification.
+
+        Surfaces the full active tool roster to the model alongside Ghost's
+        message and asks it to decide:
+          - which tool (if any) is warranted
+          - whether the request is DIRECT (explicit ask → auto-execute)
+            or INDIRECT (agent thinks it's useful → ask first)
+
+        Returns a dict:
+          {"tool": "manifest_manager", "intent": "direct",   "reason": "..."}
+          {"tool": "manifest_manager", "intent": "indirect", "reason": "..."}
+          {"tool": None}
+        """
+        import json as _json
+
+        # Build compact tool roster — only allowed, non-dormant tools
+        allowed  = getattr(self.selene, "allowed_tools", None)
+        tool_lines: list = []
         try:
-            t = self.selene.tool_router.tools.get(tool_name)
-            if t:
-                tool_desc = t.description.split("\n")[0]  # first line only
+            skip_set = {"memory_tool", "chronicle_manager", "status_checker"}  # presence/keyword-only
+            for name, t in self.selene.tool_router.tools.items():
+                if getattr(t, "dormant", False):
+                    continue
+                if name in skip_set:
+                    continue
+                if allowed is not None and name not in allowed:
+                    continue
+                # Full description, not just first line
+                desc = getattr(t, "description", "").strip()
+                tool_lines.append(f"  {name}: {desc}")
         except Exception:
             pass
 
+        # If a hint was given (from phrase match), surface it first
+        if tool_hint and not any(tool_hint in l for l in tool_lines):
+            try:
+                t = self.selene.tool_router.tools.get(tool_hint)
+                if t:
+                    tool_lines.insert(0, f"  {tool_hint}: {t.description.strip()}")
+            except Exception:
+                pass
+
+        tools_block = "\n".join(tool_lines) if tool_lines else "  (no tools available)"
+
+        hint_note = (
+            f"\n\nPhrase match hint: the message matched a trigger phrase for tool '{tool_hint}'. "
+            f"Consider this tool first, but any tool from the roster is valid."
+        ) if tool_hint else ""
+
         prompt = (
-            f"/no_think\n"
-            f"Ghost said: \"{user_input[:200]}\"\n"
-            f"Tool available: {tool_name} — {tool_desc}\n\n"
-            f"Should I use the {tool_name} tool right now? Reply with only YES or NO."
+            "/no_think\n"
+            f"Ghost's message: \"{user_input[:300]}\"\n\n"
+            f"Available tools:\n{tools_block}"
+            f"{hint_note}\n\n"
+            "Decide:\n"
+            "1. Is a tool call warranted for this message? If not, return: {\"tool\": null}\n"
+            "2. Which tool? Use the exact tool name from the list above.\n"
+            "3. Is this DIRECT (Ghost explicitly asked for a tool action or its output) "
+            "or INDIRECT (no explicit ask but a tool would genuinely help)?\n\n"
+            "Return ONLY a raw JSON object, no markdown, no explanation outside JSON:\n"
+            "{\"tool\": \"tool_name_or_null\", \"intent\": \"direct_or_indirect\", \"reason\": \"one sentence\"}\n"
+            "or\n"
+            "{\"tool\": null}"
         )
+
         try:
             raw = self.selene.llm_caller.call_llm(
                 input_data=prompt,
-                system_prompt="Reply with exactly one word: YES or NO.",
+                system_prompt=(
+                    "You are a tool routing classifier. Return ONLY a raw JSON object. "
+                    "No markdown, no codeblocks, no extra text."
+                ),
                 history=[],
                 temperature=0.0,
-                max_tokens=5,
+                max_tokens=80,
             )
-            raw = re.sub(r'<think>[\s\S]*?</think>', '', str(raw), flags=re.IGNORECASE).strip()
-            entropy = self.selene.llm_caller.last_entropy or 1.0
-            answered_yes = bool(re.search(r'\byes\b', raw, re.IGNORECASE))
-            return (answered_yes, entropy)
+            raw = re.sub(r'<think>[\s\S]*?</think>', '', str(raw), flags=re.DOTALL | re.IGNORECASE).strip()
+            # Strip markdown fences if model ignores instruction
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                lines = lines[1:] if lines[0].startswith("```") else lines
+                lines = lines[:-1] if lines and lines[-1].startswith("```") else lines
+                raw = "\n".join(lines).strip()
+
+            parsed = _json.loads(raw)
+            tool   = parsed.get("tool") or None
+            intent = parsed.get("intent", "indirect").lower()
+            reason = parsed.get("reason", "")
+
+            # Validate tool is in the roster
+            if tool and tool not in (self.selene.tool_router.tools or {}):
+                tool = None
+
+            return {"tool": tool, "intent": intent, "reason": reason}
+
         except Exception as e:
-            print(f"[ToolSuggestion]: Binary gate failed — {e}")
-            return (False, 1.0)
+            print(f"[ToolSuggestion]: Tool decision failed — {e}")
+            return {"tool": None}
 
     # ── Confidence warning injection ──────────────────────────────────────────
 
@@ -305,42 +390,44 @@ class ToolSuggestionLayer:
             return {"decision": "execute", "tool_name": tool_name,
                     "args": args, "trigger": "slash"}
 
-        # 2. Phrase match — run through binary gate
-        match = self.find_phrase_match(user_input)
-        if match:
-            tool_name, matched_phrase = match
-            should_use, entropy = self.ask_model_binary(tool_name, user_input)
+        # 2. Structured tool decision — surfaces full tool context to the model.
+        #    Phrase match is used as a hint (fast pre-filter), not the gate itself.
+        phrase_match = self.find_phrase_match(user_input)
+        hint = phrase_match[0] if phrase_match else ""
+        matched_phrase = phrase_match[1] if phrase_match else ""
 
-            is_confident = entropy < HIGH_CONFIDENCE_ENTROPY
+        decision = self.ask_model_tool_decision(user_input, tool_hint=hint)
+        tool_name = decision.get("tool")
+        intent    = decision.get("intent", "indirect")
 
-            if is_confident and should_use:
-                # High confidence YES — execute
-                self.selene.db.record_phrase_outcome(tool_name, matched_phrase, True)
-                args = {"query": user_input, "url": user_input}
-                # Merge default args for this tool
-                for cmd, (tname, base) in SLASH_COMMANDS.items():
-                    if tname == tool_name:
-                        args = {**base, **args}
-                        break
-                return {"decision": "execute", "tool_name": tool_name,
-                        "args": args, "trigger": "confident",
-                        "matched_phrase": matched_phrase}
+        if not tool_name:
+            return {"decision": "pass"}
 
-            elif is_confident and not should_use:
-                # High confidence NO — pass through
-                self.selene.db.record_phrase_outcome(tool_name, matched_phrase, False)
-                return {"decision": "pass"}
+        # Build base args for this tool
+        args = {"query": user_input, "url": user_input}
+        for cmd, (tname, base) in SLASH_COMMANDS.items():
+            if tname == tool_name:
+                args = {**base, **args}
+                break
 
-            else:
-                # Low confidence — inject warning, set pending confirmation
-                args = {"query": user_input, "url": user_input}
-                for cmd, (tname, base) in SLASH_COMMANDS.items():
-                    if tname == tool_name:
-                        args = {**base, **args}
-                        break
-                self.set_pending(tool_name, args, user_input, matched_phrase)
-                warning = self.build_suggestion_warning(tool_name)
-                return {"decision": "suggest", "tool_name": tool_name,
-                        "warning": warning, "matched_phrase": matched_phrase}
-
-        return {"decision": "pass"}
+        if intent == "direct":
+            # Ghost explicitly asked → execute immediately
+            if matched_phrase:
+                try:
+                    self.selene.db.record_phrase_outcome(tool_name, matched_phrase, True)
+                except Exception:
+                    pass
+            return {"decision": "execute", "tool_name": tool_name,
+                    "args": args, "trigger": "intent_direct",
+                    "matched_phrase": matched_phrase}
+        else:
+            # Agent thinks tool is useful but not explicitly asked → ask first
+            if matched_phrase:
+                try:
+                    self.selene.db.record_phrase_outcome(tool_name, matched_phrase, False)
+                except Exception:
+                    pass
+            self.set_pending(tool_name, args, user_input, matched_phrase)
+            warning = self.build_suggestion_warning(tool_name)
+            return {"decision": "suggest", "tool_name": tool_name,
+                    "warning": warning, "matched_phrase": matched_phrase}

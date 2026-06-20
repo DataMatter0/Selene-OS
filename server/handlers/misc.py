@@ -95,7 +95,7 @@ async def handle(websocket, data: dict, loop) -> bool:
             else:
                 await websocket.send_json({"type": "meta_insight_result", "data": {"status": "error", "message": "MetaInsight tool not loaded."}})
         else:
-            await websocket.send_json({"type": "meta_insight_result", "data": {"status": "error", "message": "Selene not initialised."}})
+            pass  # server still initialising
         return True
 
     elif msg_type == "meta_insight_promote_card":

@@ -1,2 +1,2 @@
 # Ghost — User Profile
-_Updated automatically by Iris._
+_Updated automatically by Akari._

@@ -45,7 +45,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
     SOUL_FILE           = _SOUL_FILE
     AGENTS_DIR          = _AGENTS_DIR
 
-    def __init__(self, base_url: str, model_name: str, system_prompt: Optional[str] = None, memory_window: int = 5):
+    def __init__(self, base_url: str, model_name: str = "", system_prompt: Optional[str] = None, memory_window: int = 5):
         print("Selene, Loading...")
 
         self.lock           = threading.RLock()   # re-entrant lock — prevents deadlocks
@@ -67,6 +67,10 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
         # --- Thought Stream Callback ---
         from typing import Callable
         self.thought_callback: Optional[Callable[[str, str, str], None]] = None
+
+        # Dynamic attributes set by startup after construction
+        self.tool_suggestion:           Optional[object] = None
+        self.pending_tool_confirmation: Optional[object] = None
 
         # Pass base_url without suffix — LLMCaller appends /v1/chat/completions itself.
         self.llm_caller = LLMCaller(base_url=base_url, model_name=model_name, system_prompt="")
@@ -107,6 +111,13 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             self.active_agent_slug   = slug
             self.allowed_tools       = config["tools"]
             self.notion_page_id      = config.get("notion_page_id", f"{slug}_core_page")
+
+            # Sync LLM caller to this agent's model string. The server handler
+            # has already triggered the LM Studio load before calling swap_agent,
+            # so we only need to update the model name used in the payload.
+            agent_model = config.get("model", "")
+            if agent_model:
+                self.llm_caller.model_name = agent_model
 
             # All per-agent files live inside agents/{slug}/
             def _ap(key: str, fallback: str) -> str:
@@ -596,11 +607,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
         conversation.  Conversations are loaded only when explicitly selected.
         This keeps working_memory clean on boot so Selene isn't fed stale context
         from a previous session she didn't choose to re-enter."""
-        self.dashboard_layout = {
-            "left": "fused_manifest",
-            "center": "main_chat",
-            "right": "status_panel"
-        }
+        self.agent_layouts = {}  # keyed by slug → {slots: [...]}
         if os.path.exists(self.STATE_FILE):
             print(f"[System]: Found previous state at '{self.STATE_FILE}'. Loading...")
             try:
@@ -608,12 +615,11 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                     state = json.load(f)
                 self.creative_energy = state.get("creative_energy", 100)
                 
-                # Load persistent dashboard layout
-                self.dashboard_layout = state.get("dashboard_layout", {
-                    "left": "fused_manifest",
-                    "center": "main_chat",
-                    "right": "status_panel"
-                })
+                # Load per-agent layouts (new) or migrate legacy single layout
+                self.agent_layouts = state.get("agent_layouts", {})
+                if not self.agent_layouts and "dashboard_layout" in state:
+                    # Migrate: assign old layout to selene slot
+                    self.agent_layouts = {"selene": state["dashboard_layout"]}
                 
                 # Auto-swap agent on boot if saved state differs
                 # swap_agent validates via filesystem — no name allowlist needed here
@@ -653,7 +659,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             "creative_energy":      self.creative_energy,
             "last_conversation_id": self.active_conversation_id,
             "active_agent":         self.active_agent_name.lower(),
-            "dashboard_layout":     self.dashboard_layout
+            "agent_layouts":        self.agent_layouts
         }
         try:
             with open(self.STATE_FILE, 'w') as f:
@@ -661,6 +667,32 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             print("[System]: State saved.")
         except IOError as e:
             print(f"[System Error]: Could not save state file. Error: {e}")
+
+    _DEFAULT_LAYOUT = {
+        "slots": [
+            {"widgetId": "fused_manifest", "fr": 1},
+            {"widgetId": "main_chat",      "fr": 2},
+            {"widgetId": "status_panel",   "fr": 1},
+        ]
+    }
+
+    @property
+    def dashboard_layout(self):
+        """Returns the layout for the current active agent, or a sensible default."""
+        slug = getattr(self, "active_agent_slug", "selene") or "selene"
+        layout = getattr(self, "agent_layouts", {}).get(slug, self._DEFAULT_LAYOUT)
+        # Migrate legacy {left, center, right} format → slots list
+        if layout and "slots" not in layout:
+            layout = self._DEFAULT_LAYOUT
+        return layout
+
+    @dashboard_layout.setter
+    def dashboard_layout(self, value):
+        """Sets the layout for the current active agent."""
+        slug = getattr(self, "active_agent_slug", "selene") or "selene"
+        if not hasattr(self, "agent_layouts") or self.agent_layouts is None:
+            self.agent_layouts = {}
+        self.agent_layouts[slug] = value
 
     @staticmethod
     def _strip_tool_tags(text: str) -> str:

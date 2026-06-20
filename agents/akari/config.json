@@ -2,17 +2,18 @@
   "name": "Akari",
   "title": "The Saintess",
   "domain": "Frontend Development, UI/UX, Component Design, and Visual Systems",
-  "model": "DevQuasar/Tesslate.UIGEN-T2-7B-GGUF:Q4_K_M",
-  "color_primary": "#fef3c7",
-  "color_secondary": "#f59e0b",
-  "color_text": "#78350f",
+  "model": "tesslate.uigen-t2-7b",
+  "color_primary": "#f472b6",
+  "color_secondary": "#fde047",
+  "color_text": "#fce7f3",
   "tools": [
     "file_manager",
     "manifest_manager",
     "todo",
     "status_checker",
     "meta_insight",
-    "knowledge_manager"
+    "knowledge_manager",
+    "notion"
   ],
   "memory_db": "memory.db",
   "prompt_file": "prompt.txt",
@@ -21,5 +22,6 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "akari_core_page"
+  "notion_page_id": "akari_core_page",
+  "model_path": "tesslate.uigen-t2-7b"
 }
