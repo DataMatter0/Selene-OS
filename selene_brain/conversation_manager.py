@@ -17,15 +17,17 @@ class ConversationManagerMixin:
         return os.path.join(self.CONVERSATIONS_DIR, f"{conv_id}.json")
 
     def _write_conversation(self, conv_id: str, name: str, messages: list,
-                            created_at: float, updated_at: float) -> None:
+                            created_at: float, updated_at: float,
+                            participants: list = None) -> None:
         try:
             with open(self._conv_path(conv_id), 'w', encoding='utf-8') as f:
                 json.dump({
-                    "id":         conv_id,
-                    "name":       name,
-                    "created_at": created_at,
-                    "updated_at": updated_at,
-                    "messages":   messages,
+                    "id":           conv_id,
+                    "name":         name,
+                    "created_at":   created_at,
+                    "updated_at":   updated_at,
+                    "messages":     messages,
+                    "participants": participants or [],
                 }, f, indent=2, ensure_ascii=False)
         except IOError as e:
             print(f"[System Error]: Could not write conversation '{conv_id}' — {e}")
@@ -35,12 +37,14 @@ class ConversationManagerMixin:
         if self.active_conversation_id and self.working_memory:
             self.save_current_conversation()
         conv_id = str(uuid.uuid4())
-        self.active_conversation_id   = conv_id
-        self.active_conversation_name = "New Conversation"
+        creator = getattr(self, "active_agent_name", "selene").lower()
+        self.active_conversation_id    = conv_id
+        self.active_conversation_name  = "New Conversation"
+        self.active_conversation_participants = [creator]
         with self.lock:
             self.working_memory = []
-        print(f"[System]: New conversation started — {conv_id[:8]}")
-        return {"id": conv_id, "name": "New Conversation"}
+        print(f"[System]: New conversation started — {conv_id[:8]} (creator: {creator})")
+        return {"id": conv_id, "name": "New Conversation", "participants": [creator]}
 
     def save_current_conversation(self) -> None:
         """Persist the active conversation's working_memory to disk."""
@@ -64,6 +68,7 @@ class ConversationManagerMixin:
             self.active_conversation_id,
             self.active_conversation_name,
             messages, created_at, now,
+            participants=getattr(self, "active_conversation_participants", []),
         )
 
     def list_conversations(self) -> list:
@@ -84,6 +89,7 @@ class ConversationManagerMixin:
                         "created_at":    data.get("created_at", 0),
                         "updated_at":    data.get("updated_at", 0),
                         "message_count": len(msgs) // 2,
+                        "participants":  data.get("participants", []),
                     })
                 except Exception:
                     pass
@@ -104,13 +110,15 @@ class ConversationManagerMixin:
                 data = json.load(f)
             with self.lock:
                 self.working_memory = data.get("messages", [])
-            self.active_conversation_id   = data.get("id", conv_id)
-            self.active_conversation_name = data.get("name", "Untitled")
+            self.active_conversation_id           = data.get("id", conv_id)
+            self.active_conversation_name         = data.get("name", "Untitled")
+            self.active_conversation_participants = data.get("participants", [])
             print(f"[System]: Loaded conversation '{self.active_conversation_name}'")
             return {
-                "id":       self.active_conversation_id,
-                "name":     self.active_conversation_name,
-                "messages": list(self.working_memory),
+                "id":           self.active_conversation_id,
+                "name":         self.active_conversation_name,
+                "messages":     list(self.working_memory),
+                "participants": list(self.active_conversation_participants),
             }
         except Exception as e:
             print(f"[System Error]: Could not load conversation {conv_id} — {e}")
@@ -153,6 +161,46 @@ class ConversationManagerMixin:
         except Exception as e:
             print(f"[System Error]: Could not delete conversation {conv_id} — {e}")
             return False
+
+
+    def add_participant(self, conv_id: str, slug: str) -> bool:
+        """Add an agent slug to a conversation's participant list."""
+        slug = slug.lower().strip()
+        # Update in-memory if active
+        if self.active_conversation_id == conv_id:
+            parts = getattr(self, "active_conversation_participants", [])
+            if slug not in parts:
+                parts.append(slug)
+                self.active_conversation_participants = parts
+        # Update on disk
+        conv_path = self._conv_path(conv_id)
+        if not os.path.exists(conv_path):
+            return False
+        try:
+            with open(conv_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            parts = data.get("participants", [])
+            if slug not in parts:
+                parts.append(slug)
+            data["participants"] = parts
+            with open(conv_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"[System Error]: Could not add participant — {e}")
+            return False
+
+    def get_participants(self, conv_id: str) -> list:
+        """Return participant list for a conversation."""
+        if self.active_conversation_id == conv_id:
+            return list(getattr(self, "active_conversation_participants", []))
+        conv_path = self._conv_path(conv_id)
+        try:
+            with open(conv_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data.get("participants", [])
+        except Exception:
+            return []
 
     def rollback_last_turn(self) -> bool:
         """Remove the last user+assistant pair from working_memory.

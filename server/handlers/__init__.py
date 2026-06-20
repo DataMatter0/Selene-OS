@@ -26,4 +26,10 @@ Domains:
   story         — Infinite Story Engine (story_*)
   misc          — maps_query, polymarket_query, document_query, notion_query,
                   meta_insight_query, meta_insight_promote_card
+  notifications — get_notifications, mark_notification_read,
+                  mark_all_notifications_read, clear_notifications
+                  (also exports add_notification() for internal use)
 """
+
+# Re-export for internal callers:  from server.handlers import add_notification
+from server.handlers.notifications import add_notification

@@ -96,16 +96,46 @@ async def handle(websocket, data: dict, loop) -> bool:
                     return True
                 # cancel or ambiguous — fall through to normal chat
 
-        # Agent ping routing (@selene / @sage)
+        # /invite @agent — adds agent as participant, grants history access
+        _INVITE_MATCH = re.match(r'^/invite\s+@(\w+)', user_input.strip(), re.IGNORECASE)
+        if _INVITE_MATCH and selene:
+            _inv_slug = _INVITE_MATCH.group(1).lower()
+            _conv_id  = selene.active_conversation_id
+            if _conv_id:
+                _inv_ok = selene.add_participant(_conv_id, _inv_slug)
+                # Surface current history so invited agent has full context
+                _hist_snapshot = list(selene.working_memory)
+                _inv_msg = (
+                    f"@{_inv_slug.capitalize()} has been invited to this conversation."
+                    if _inv_ok else
+                    f"Could not invite @{_inv_slug} — are they a valid agent?"
+                )
+                await websocket.send_json({
+                    "type": "participant_added", "conv_id": _conv_id,
+                    "agent": _inv_slug, "ok": _inv_ok,
+                    "participants": selene.get_participants(_conv_id),
+                })
+                await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
+                await websocket.send_json({"type": "response", "content": _inv_msg,
+                                           "agent": getattr(selene, "active_agent_name", "selene").lower()})
+                await websocket.send_json({"type": "state", "data": get_state()})
+            return True
+
+        # Agent ping routing (@agent — one-shot, no participant added)
+        _PING_MAP = {
+            "selene": "Selene/Sage", "sage": "Selene/Sage",
+            "akari": "Akari", "yami": "Yami", "rom": "ROM", "ram": "RAM",
+        }
         target_agent = None
-        if "@selene" in user_input.lower():
-            target_agent = "Selene/Sage"
-        elif "@sage" in user_input.lower():
-            target_agent = "Selene/Sage"
+        _lower_input = user_input.lower()
+        for _slug, _name in _PING_MAP.items():
+            if f"@{_slug}" in _lower_input:
+                target_agent = _name
+                break
 
         if target_agent and selene:
             current_agent = getattr(selene, "active_agent_name", "Selene").lower()
-            if current_agent != target_agent:
+            if current_agent.lower() != target_agent.lower():
                 print(f"[Selene Server]: Intercepted ping to @{target_agent}. Swapping active agent profile.")
                 await loop.run_in_executor(None, selene.swap_agent, target_agent)
                 await broadcast({"type": "state",         "data": get_state()})
@@ -114,7 +144,8 @@ async def handle(websocket, data: dict, loop) -> bool:
                 await broadcast({"type": "manifest_data", "data": manifest_res.get("data")})
 
         if target_agent:
-            user_input = re.sub(rf'@{target_agent}\b', '', user_input, flags=re.IGNORECASE).strip()
+            _slug_pat = "|".join(_PING_MAP.keys())
+            user_input = re.sub(rf'@(?:{_slug_pat})\b', '', user_input, flags=re.IGNORECASE).strip()
 
         # Auto-create conversation on clean boot
         if selene and selene.active_conversation_id is None:
@@ -412,6 +443,7 @@ async def handle(websocket, data: dict, loop) -> bool:
             await websocket.send_json({
                 "type": "conversation_loaded",
                 "id": conv_info["id"], "name": conv_info["name"], "messages": [],
+                "participants": conv_info.get("participants", []),
             })
             print("[Selene Server]: Memory cleared by UI (legacy).")
         await websocket.send_json({"type": "state", "data": get_state()})

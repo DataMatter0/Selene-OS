@@ -282,6 +282,52 @@ The thin `selene_server.py` now only: wires FastAPI + CORS, registers REST route
 
 ---
 
+## [v0.7] 2026-06-20 — Conversation Participants, Notifications, Agent Strip Fix
+
+### Added
+
+**Conversation participant system**
+- Every conversation now has a `participants` list — seeded with the creating agent's slug on `new_conversation()`
+- `/invite @agent` command in chat: adds agent as participant, grants full conversation history access, sends confirmation message
+- `@agent` pings remain unchanged — one-shot response, no participant written
+- `add_participant(conv_id, slug)` and `get_participants(conv_id)` methods on `ConversationManagerMixin`
+- `invite_agent` WS handler in `server/handlers/conversations.py` — broadcasts `participant_added` event
+- `participant_added` WS message handled in frontend — updates conversation list + active participants
+- All 6 `@agent` pings now recognized (`selene`, `sage`, `akari`, `yami`, `rom`, `ram`) — previous version only handled `@selene` / `@sage`
+
+**Participant filter UI in ConvList**
+- Agent color dots on each conversation row showing who's participating
+- Filter row: ALL button + per-agent colored dot buttons, filters conversation list by participant
+- Inline invite panel: shows uninvited agents as dashed-border dots, clicking adds them to current conversation
+- `ConvList.jsx` fully rewritten to support participants, filtering, and invites
+
+**Notification system**
+- Persistent store at `agents/shared/notifications.json` — survives restarts, max 200 entries
+- `server/handlers/notifications.py` — `get_notifications`, `mark_notification_read`, `mark_all_notifications_read`, `clear_notifications`
+- `add_notification(title, body, page, source_agent)` — callable from any tool or handler. Writes to disk + broadcasts WS event to all clients
+- `server.handlers.add_notification` re-exported from `__init__` for internal callers
+- Bell icon in TopBar with animated unread count badge (red dot, count, 99+ cap)
+- `NotificationPanel.jsx` — slides in below TopBar, shows title/body/time-ago/source agent dot/page link. Click → marks read + navigates. Mark all / Clear buttons
+- `server/state.py` — `event_loop = None` slot; set by `lifespan()` so sync helpers can schedule async broadcasts
+- `notification` + `notifications_data` WS cases added to frontend handler
+
+### Fixed
+
+- `llm_caller.py` strip regex — was only stripping `Selene|Sage|Ghost` from model output. Now covers all six agents: `Selene|Sage|Akari|Yami|ROM|RAM|Ghost`
+- `conversation_loaded` WS response now includes `participants` field
+- `new_conversation` WS response now includes `participants` field
+
+### Safe to commit
+- `selene_brain/conversation_manager.py`, `selene_brain/llm_caller.py`
+- `server/handlers/conversations.py`, `server/handlers/chat.py`, `server/handlers/notifications.py`
+- `server/handlers/__init__.py`, `server/state.py`, `server/startup.py`, `selene_server.py`
+- `renderer/index.html`
+- `renderer/components/ConvList.jsx`, `renderer/components/TopBar.jsx`, `renderer/components/NotificationPanel.jsx`
+- `CHANGELOG.md`
+- Do NOT commit: `.env`, `agents/*/memory.db`, `agents/*/prompt.txt`, `agents/*/soul.md` (private), `memories/`, `conversations/`, `selene_state.json`, `agents/shared/notifications.json`
+
+---
+
 ## Unreleased
 
 _Track in-progress work here. Move to a versioned block when committing._

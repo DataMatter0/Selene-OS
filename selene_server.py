@@ -31,16 +31,17 @@ import server.state  as _st
 
 # Handler dispatch table
 from server.handlers import (
-    chat         as _h_chat,
+    chat          as _h_chat,
     conversations as _h_conv,
-    memory       as _h_mem,
-    manifest     as _h_manifest,
-    knowledge    as _h_knowledge,
-    system       as _h_system,
-    steam        as _h_steam,
-    youtube      as _h_youtube,
-    story        as _h_story,
-    misc         as _h_misc,
+    memory        as _h_mem,
+    manifest      as _h_manifest,
+    knowledge     as _h_knowledge,
+    system        as _h_system,
+    steam         as _h_steam,
+    youtube       as _h_youtube,
+    story         as _h_story,
+    misc          as _h_misc,
+    notifications as _h_notif,
 )
 
 load_dotenv()
@@ -379,6 +380,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if await _h_youtube.handle(websocket, data, loop, yt_state):
                 continue
             if await _h_story.handle(websocket, data, loop):
+                continue
+            if await _h_notif.handle(websocket, data, loop):
                 continue
             if await _h_misc.handle(websocket, data, loop):
                 continue

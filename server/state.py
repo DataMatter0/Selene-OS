@@ -17,6 +17,7 @@ from fastapi import WebSocket
 
 # Populated at startup by startup.py
 selene_ref = None   # set by startup._init_selene via set_selene()
+event_loop = None   # set by lifespan() so sync helpers can schedule coroutines
 
 clients: Set[WebSocket] = set()
 _prev_writing: bool = False

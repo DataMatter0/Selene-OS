@@ -16,6 +16,7 @@ async def handle(websocket, data: dict, loop) -> bool:
             await websocket.send_json({
                 "type": "conversation_loaded",
                 "id": conv_info["id"], "name": conv_info["name"], "messages": [],
+                "participants": conv_info.get("participants", []),
             })
             await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
         await websocket.send_json({"type": "state", "data": get_state()})
@@ -29,6 +30,7 @@ async def handle(websocket, data: dict, loop) -> bool:
                 await websocket.send_json({
                     "type": "conversation_loaded",
                     "id": result["id"], "name": result["name"], "messages": result["messages"],
+                    "participants": result.get("participants", []),
                 })
                 await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
                 await websocket.send_json({"type": "state", "data": get_state()})
@@ -64,6 +66,21 @@ async def handle(websocket, data: dict, loop) -> bool:
                 })
             await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
             await websocket.send_json({"type": "state", "data": get_state()})
+        return True
+
+    elif msg_type == "invite_agent":
+        conv_id = data.get("conv_id", "").strip()
+        slug    = data.get("agent", "").strip().lower()
+        if selene and conv_id and slug:
+            ok = selene.add_participant(conv_id, slug)
+            await websocket.send_json({
+                "type": "participant_added",
+                "conv_id": conv_id,
+                "agent": slug,
+                "ok": ok,
+                "participants": selene.get_participants(conv_id),
+            })
+            await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
         return True
 
     return False

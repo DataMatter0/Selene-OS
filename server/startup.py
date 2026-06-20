@@ -173,6 +173,9 @@ def _init_selene() -> None:
 async def lifespan(app: FastAPI):
     # ── startup ───────────────────────────────────────────────────────────────
     loop = asyncio.get_event_loop()
+    # Store loop on state so internal helpers (e.g. add_notification) can broadcast
+    import server.state as _st_ref
+    _st_ref.event_loop = loop
 
     async def _start_selene_background():
         await loop.run_in_executor(None, _init_selene)

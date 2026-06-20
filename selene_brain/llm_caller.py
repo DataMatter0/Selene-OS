@@ -153,10 +153,10 @@ class LLMCaller:
             reasoning = (message.get("reasoning_content") or "").strip()
 
             # Strip agent-name prefix + optional timestamp the model copies from
-            # history formatting: "Selene: (2026-06-07) ..." or "Sage: ..."
+            # history formatting: "Selene: (2026-06-07) ..." or "Akari: ..."
             import re as _re
             content = _re.sub(
-                r'^(?:Selene|Sage|Ghost)\s*:\s*(?:\([^)]*\)\s*)?',
+                r'^(?:Selene|Sage|Akari|Yami|ROM|RAM|Ghost)\s*:\s*(?:\([^)]*\)\s*)?',
                 '', content, count=1
             ).strip()
 
