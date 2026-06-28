@@ -20,5 +20,10 @@
   "tools_context": "tools_context.md",
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
-  "notion_page_id": "ram_core_page"
+  "notion_page_id": "ram_core_page",
+  "color_glow": "rgba(249,168,212,0.08)",
+  "role": "creative",
+  "capabilities": [],
+  "display_name": "RAM",
+  "model_path": "black-forest-labs/FLUX.1-schnell"
 }

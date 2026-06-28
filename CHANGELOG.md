@@ -328,6 +328,68 @@ The thin `selene_server.py` now only: wires FastAPI + CORS, registers REST route
 
 ---
 
+## [v0.8] 2026-06-20 — Roster-Driven Agent System
+
+### Added
+
+**`server/roster.py` — dynamic agent roster**
+- Scans `agents/*/config.json` at startup — no central agent list anywhere else in the system
+- `get_roster()` / `get_agent(slug)` / `agent_has_cap(slug, cap)` / `default_agent_slug()` / `agents_with_cap(cap)` / `build_ping_map()`
+- `_derive_glow(hex)` — auto-generates RGBA glow from `color_primary` so new agents don't need to specify it
+- `reload_roster()` hot-reload WS handler exposed via `server/handlers/system.py`
+- `"roster": get_roster()` added to live WS state payload
+
+**Capability system in `agents/*/config.json`**
+- `capabilities` array replaces all `if slug == "sage"` / `if slug == "selene"` guards in the backend
+- Defined capabilities: `default_boot`, `grant_access`, `dev_manifest`, `idea_routing`, `write_agent_manifest`, `agent_creation`
+- Current assignments: selene → `["default_boot","grant_access"]`; sage → `["grant_access","dev_manifest","idea_routing","write_agent_manifest"]`; akari/yami → `["agent_creation"]`; rom/ram → `[]`
+- All six `config.json` files updated with `color_glow`, `role`, `capabilities`, `display_name` fields
+- Yami `color_primary` corrected from near-black `#1c1917` to amber `#f59e0b`
+
+**Backend roster wiring**
+- `tools/manifest.py` — all `== "sage"` checks replaced with `agent_has_cap()` / `agents_with_cap()` calls
+- `tools/meta_insight.py` — `is_sage` replaced with `agent_has_cap(slug, "grant_access")`; fallback slugs use `default_agent_slug()`
+- `selene_brain/agent_memory.py` — access control uses `agent_has_cap(requesting_agent, "grant_access")`
+- `selene_brain/llm_chat.py` — boot and saved-agent fallback use `default_agent_slug()` from roster
+- `selene_brain/conversation_manager.py` — default agent fallback uses `default_agent_slug()`
+- `server/handlers/chat.py` — `_PING_MAP` and `_AGENT_SLUGS` built from `build_ping_map()` / `get_roster()`; `/invite` now routes to any roster agent, not a fixed six
+- `server/handlers/system.py` — `toggle_agent` default uses `default_agent_slug()`
+- `server/state.py` — offline fallback uses `_default_agent_slug_safe()` helper (avoids import-time disk I/O errors)
+- `server/startup.py` — `reload_roster()` called before `_init_selene()`
+
+**Frontend roster wiring**
+- `renderer/components/RosterUtils.js` — new shared helper loaded before all components. `window.RosterUtils`: `getColor()`, `getName()`, `getGlow()`, `getTitle()`, `hasCap()`, `defaultSlug()`, `allSlugs()`
+- All six hardcoded `PANTHEON_COLORS` / `AGENT_COLORS` / `ALL_AGENTS` / `PANTHEON` dicts removed from every component
+- `renderer/components/TypingIndicator.jsx` — uses `RosterUtils.getColor()` / `getName()`
+- `renderer/components/ChatView.jsx` — uses `RosterUtils.getName()` / `getColor()`; passes `roster` to ConvList and TypingIndicator
+- `renderer/components/ConvList.jsx` — `ParticipantDots` and `ConvList` accept `roster` prop; all color/slug lookups via RosterUtils
+- `renderer/components/NotificationPanel.jsx` — agent dot color via `RosterUtils.getColor()`
+- `renderer/components/TopBar.jsx` — `PANTHEON` array derived from `roster` prop; falls back to selene/sage if roster not yet loaded
+- `renderer/components/ToolsView.jsx` — manifest panel label/badge/description driven by `agent_has_cap("dev_manifest")` from roster; no more `activeAgent === "sage"` conditionals
+- `renderer/index.html` — `const roster = seleneState?.roster || []`; `BOOT_PANTHEON` derived from roster (falls back to selene/sage); swap overlay orbit dots driven by roster colors and count; `roster` prop threaded to TopBar, ChatView, ToolsView, NotificationPanel
+
+### Impact
+
+Adding a new agent now requires **only**:
+1. Create `agents/<slug>/config.json` with name, color, title, capabilities, tools, model
+2. Restart server — roster auto-discovers the new folder
+
+No other system file needs to change. Frontend adapts automatically on next WS state push.
+
+### Safe to commit
+- `server/roster.py`, `server/state.py`, `server/startup.py`
+- `server/handlers/system.py`, `server/handlers/chat.py`
+- `tools/manifest.py`, `tools/meta_insight.py`
+- `selene_brain/agent_memory.py`, `selene_brain/llm_chat.py`, `selene_brain/conversation_manager.py`, `selene_brain/llm_caller.py`
+- `agents/selene/config.json`, `agents/sage/config.json`, `agents/akari/config.json`, `agents/yami/config.json`, `agents/rom/config.json`, `agents/ram/config.json`
+- `renderer/components/RosterUtils.js`, `renderer/components/TypingIndicator.jsx`, `renderer/components/ChatView.jsx`
+- `renderer/components/ConvList.jsx`, `renderer/components/NotificationPanel.jsx`, `renderer/components/TopBar.jsx`, `renderer/components/ToolsView.jsx`
+- `renderer/index.html`
+- `CHANGELOG.md`
+- Do NOT commit: `.env`, `agents/*/memory.db`, `agents/*/prompt.txt`, `agents/*/soul.md`, `memories/`, `conversations/`, `selene_state.json`, `agents/shared/notifications.json`
+
+---
+
 ## Unreleased
 
 _Track in-progress work here. Move to a versioned block when committing._

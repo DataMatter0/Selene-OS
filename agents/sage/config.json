@@ -2,7 +2,7 @@
   "name": "Sage",
   "title": "The Oracle",
   "domain": "Research, Development, Backlog Orchestration, and Technical Synthesis",
-  "model": "Selene/Sage",
+  "model": "google/gemma-3n-e4b",
   "color_primary": "#a78bfa",
   "color_secondary": "#7c3aed",
   "color_text": "#f5f3ff",
@@ -26,5 +26,14 @@
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
   "notion_page_id": "sage_core_page",
-  "model_path": "google/gemma-3n-e4b"
+  "model_path": "google/gemma-3n-e4b",
+  "color_glow": "rgba(167,139,250,0.08)",
+  "role": "oracle",
+  "capabilities": [
+    "grant_access",
+    "dev_manifest",
+    "idea_routing",
+    "write_agent_manifest"
+  ],
+  "display_name": "Sage"
 }

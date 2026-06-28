@@ -5,6 +5,7 @@ import uuid
 import time
 from typing import Optional, TYPE_CHECKING
 import threading
+from server.roster import default_agent_slug as _roster_default_slug
 
 class ConversationManagerMixin:
     if TYPE_CHECKING:
@@ -37,7 +38,7 @@ class ConversationManagerMixin:
         if self.active_conversation_id and self.working_memory:
             self.save_current_conversation()
         conv_id = str(uuid.uuid4())
-        creator = getattr(self, "active_agent_name", "selene").lower()
+        creator = getattr(self, "active_agent_name", _roster_default_slug()).lower()
         self.active_conversation_id    = conv_id
         self.active_conversation_name  = "New Conversation"
         self.active_conversation_participants = [creator]

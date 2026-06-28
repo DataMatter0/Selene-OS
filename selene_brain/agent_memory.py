@@ -1,5 +1,6 @@
 # selene_brain/agent_memory.py
 import sqlite3
+from server.roster import agent_has_cap, default_agent_slug as _roster_default
 import os
 import json
 import time
@@ -412,20 +413,25 @@ class AgentMemoryStore:
         offset: int = 0,
         time_window_hours: Optional[float] = None,
         sage_requesting: bool = False,
-        requesting_agent: str = "selene",
+        requesting_agent: str = None,
     ) -> List[Dict[str, Any]]:
         """
         Flexible query over meta_insight_log.
         sage_requesting=True restricts results to sage_accessible=1 rows
-        unless the requesting agent is the same as the log owner.
+        for entries belonging to the default agent.
         """
+        if requesting_agent is None:
+            requesting_agent = _roster_default()
         try:
             conditions = []
             params: list = []
 
-            # Access control: Sage can only read Selene's entries that are sage_accessible
-            if sage_requesting and requesting_agent == "sage":
-                conditions.append("(agent = 'sage' OR (agent = 'selene' AND sage_accessible = 1))")
+            # Access control: grant_access agents can read the default agent's
+            # accessible entries in addition to their own
+            _default = _roster_default()
+            if sage_requesting and agent_has_cap(requesting_agent, "grant_access"):
+                conditions.append(f"(agent = ? OR (agent = '{_default}' AND sage_accessible = 1))")
+                params.append(requesting_agent)
 
             if agent:
                 conditions.append("agent = ?")

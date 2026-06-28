@@ -12,6 +12,7 @@ import os
 import json
 import uuid
 from dotenv import load_dotenv
+from server.roster import default_agent_slug as _roster_default_slug
 
 from . import PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
 
@@ -78,9 +79,9 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
 
         register_all_tools(self, self.tool_router)
 
-        # Setup Agent via hot-swapping Selene by default
+        # Setup Agent via hot-swapping the roster default on boot
         self._prompt_dirty = True
-        self.swap_agent("selene")
+        self.swap_agent(_roster_default_slug())
 
         self.load_state()
 
@@ -112,9 +113,10 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             self.allowed_tools       = config["tools"]
             self.notion_page_id      = config.get("notion_page_id", f"{slug}_core_page")
 
-            # Sync LLM caller to this agent's model string. The server handler
-            # has already triggered the LM Studio load before calling swap_agent,
-            # so we only need to update the model name used in the payload.
+            # Sync LLM caller to the model name for chat completions.
+            # "model" in config.json is the LM Studio identifier used in API payloads
+            # (may be a custom display name like "Selene/Sage" or a real path).
+            # "model_path" is only used by LMStudioManager for load/unload API calls.
             agent_model = config.get("model", "")
             if agent_model:
                 self.llm_caller.model_name = agent_model
@@ -287,12 +289,14 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             # /no_think suppresses Qwen3's reasoning mode for this classification call —
             # it only needs to output a single XML tag, not a reasoning chain.
             try:
+                print(f"[ChoiceLayer]: calling LLM model={self.llm_caller.model_name!r}")
                 raw_choice = self.llm_caller.call_llm(
                     input_data="/no_think\nDecide now.",
                     system_prompt=choice_prompt,
                     temperature=0.0,
                     max_tokens=40,
                 )
+                print(f"[ChoiceLayer]: done, raw={str(raw_choice)[:60]!r}")
                 raw_choice = re.sub(
                     r'<think>[\s\S]*?</think>',
                     '',
@@ -595,6 +599,21 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                     trigger_mode="llm",
                     session_id=_session_snap,
                 )
+                # Log a dedicated emotion entry so the EMOTION tab in MetaInsightView populates
+                _emo_shift = abs(asst_int - user_int)
+                self.db.log_meta_insight(
+                    agent=_agent_name_snap,
+                    category="emotion",
+                    subcategory=f"{user_emo} → {asst_emo}",
+                    input_context=user_input[:500],
+                    reasoning=f"Input: {user_emo} ({user_int:.2f}) | Response: {asst_emo} ({asst_int:.2f}) | Shift: {_emo_shift:.2f}",
+                    result=f"{asst_emo} ({round(asst_int * 100)}%)",
+                    emotional_state_before=_emotion_before,
+                    emotional_state_after=_emotion_after,
+                    confidence_score=round(asst_int, 3),
+                    trigger_mode="emotion_classifier",
+                    session_id=_session_snap,
+                )
             except Exception as e:
                 print(f"[Emotion/MetaInsight]: Background pass failed: {e}")
 
@@ -623,7 +642,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
                 
                 # Auto-swap agent on boot if saved state differs
                 # swap_agent validates via filesystem — no name allowlist needed here
-                saved_agent = state.get("active_agent", "selene").lower()
+                saved_agent = state.get("active_agent", _roster_default_slug()).lower()
                 if saved_agent != self.active_agent_name.lower():
                     try:
                         self._prompt_dirty = True

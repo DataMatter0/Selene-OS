@@ -23,5 +23,11 @@
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
   "notion_page_id": "akari_core_page",
-  "model_path": "tesslate.uigen-t2-7b"
+  "model_path": "tesslate.uigen-t2-7b",
+  "color_glow": "rgba(244,114,182,0.10)",
+  "role": "designer",
+  "capabilities": [
+    "agent_creation"
+  ],
+  "display_name": "Akari"
 }

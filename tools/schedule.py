@@ -21,7 +21,10 @@ class ScheduleTool(BaseTool):
 
     def __init__(self, agent_state: Any):
         self.agent_state = agent_state
-        self.state_file = os.path.join(self.agent_state.MEMORY_DIR, "schedule_state.json")
+
+    @property
+    def state_file(self) -> str:
+        return os.path.join(self.agent_state.MEMORY_DIR, "schedule_state.json")
 
     def load_state(self) -> dict:
         if not os.path.exists(self.state_file):

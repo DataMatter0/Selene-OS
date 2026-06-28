@@ -21,5 +21,9 @@
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
   "notion_page_id": "rom_core_page",
-  "model_path": "huihui-qwen3-vl-8b-instruct-creative-v0.4-i1"
+  "model_path": "huihui-qwen3-vl-8b-instruct-creative-v0.4-i1",
+  "color_glow": "rgba(125,211,252,0.08)",
+  "role": "visionary",
+  "capabilities": [],
+  "display_name": "ROM"
 }

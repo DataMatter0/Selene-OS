@@ -14,6 +14,15 @@ import asyncio
 from typing import TYPE_CHECKING, Set
 
 from fastapi import WebSocket
+from server.roster import get_roster, default_agent_slug as _roster_default
+
+
+def _default_agent_slug_safe() -> str:
+    """Return default agent slug without crashing if roster isn't loaded yet."""
+    try:
+        return _roster_default()
+    except Exception:
+        return "selene"
 
 # Populated at startup by startup.py
 selene_ref = None   # set by startup._init_selene via set_selene()
@@ -41,7 +50,8 @@ def get_state() -> dict:
             "is_running":        False,
             "conversation_id":   None,
             "conversation_name": "New Conversation",
-            "active_agent":      "selene",
+            "active_agent":      _default_agent_slug_safe(),
+            "roster":            [],
             "tools": [
                 "chronicle_manager",
                 "memory_tool",
@@ -82,6 +92,7 @@ def get_state() -> dict:
                 "slug":          getattr(selene, "active_agent_slug",  active_agent),
             },
             "tools":             getattr(selene, "allowed_tools", []),
+            "roster":            get_roster(),
             "dashboard_layout":  layout,
             "mood_index":        _cached_emotion["mood_index"],
             "emotion":           _cached_emotion["emotion"],

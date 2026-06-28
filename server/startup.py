@@ -18,6 +18,7 @@ from fastapi import FastAPI
 
 from .config  import BASE_URL
 from .state   import set_selene, broadcast, get_state, _state_broadcaster, clients
+from .roster  import reload_roster, default_agent_slug
 from selene_brain import LLMChat, LMStudioManager
 
 
@@ -176,6 +177,8 @@ async def lifespan(app: FastAPI):
     # Store loop on state so internal helpers (e.g. add_notification) can broadcast
     import server.state as _st_ref
     _st_ref.event_loop = loop
+    # Build agent roster from agents/*/config.json before anything else
+    reload_roster()
 
     async def _start_selene_background():
         await loop.run_in_executor(None, _init_selene)

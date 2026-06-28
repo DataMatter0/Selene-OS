@@ -13,6 +13,7 @@ from server.tool_pipeline import (
     _execute_tool_and_respond, run_todo_loop,
 )
 import server.state as _st
+from server.roster import build_ping_map, agents_with_cap, default_agent_slug, get_roster
 
 
 async def handle(websocket, data: dict, loop) -> bool:
@@ -23,6 +24,7 @@ async def handle(websocket, data: dict, loop) -> bool:
     if msg_type == "chat":
         t_start    = time.perf_counter()
         user_input = data.get("content", "").strip()
+        print(f"[Chat]: received msg, selene={'SET' if selene else 'NONE'}, input={user_input[:40]!r}")
         if not user_input:
             return True
 
@@ -33,8 +35,8 @@ async def handle(websocket, data: dict, loop) -> bool:
             _KEEP  = {"keep", "keep it", "keep here", "save here", "sage", "me", "mine", "here"}
             _YES   = {"yes", "yeah", "yep", "sure", "ok", "okay", "go ahead", "do it", "y",
                       "route it", "send it", "that works", "sounds good"}
-            # Check if user named an agent slug directly
-            _AGENT_SLUGS = {"Selene/Sage", "Akari", "Yami", "ROM", "RAM"}
+            # Check if user named an agent slug directly — built from roster
+            _AGENT_SLUGS = {a["display_name"] for a in get_roster()}
             _named_agent = next((s for s in _AGENT_SLUGS if s in _lower), None)
 
             is_keep = _lower in _KEEP or any(_lower.startswith(k) for k in _KEEP)
@@ -121,42 +123,127 @@ async def handle(websocket, data: dict, loop) -> bool:
                 await websocket.send_json({"type": "state", "data": get_state()})
             return True
 
-        # Agent ping routing (@agent — one-shot, no participant added)
-        _PING_MAP = {
-            "selene": "Selene/Sage", "sage": "Selene/Sage",
-            "akari": "Akari", "yami": "Yami", "rom": "ROM", "ram": "RAM",
-        }
-        target_agent = None
-        _lower_input = user_input.lower()
-        for _slug, _name in _PING_MAP.items():
-            if f"@{_slug}" in _lower_input:
-                target_agent = _name
-                break
+        # ── Agent ping routing ────────────────────────────────────────────────
+        # Collect ALL @mentions in order — multi-ping supported (@Sage @Akari etc.)
+        _PING_MAP  = build_ping_map()   # {slug: display_name}
+        _slug_pat  = "|".join(re.escape(s) for s in _PING_MAP.keys())
+        _mentions  = re.findall(rf'@({_slug_pat})\b', user_input, flags=re.IGNORECASE) if _slug_pat else []
+        _pinged_slugs = list(dict.fromkeys(m.lower() for m in _mentions))  # dedup, preserve order
 
-        if target_agent and selene:
-            current_agent = getattr(selene, "active_agent_name", "Selene").lower()
-            if current_agent.lower() != target_agent.lower():
-                print(f"[Selene Server]: Intercepted ping to @{target_agent}. Swapping active agent profile.")
-                await loop.run_in_executor(None, selene.swap_agent, target_agent)
-                await broadcast({"type": "state",         "data": get_state()})
-                await broadcast({"type": "conversations", "data": selene.list_conversations()})
-                manifest_res = selene.tool_router.route_and_execute("manifest_manager", {"command": "get_manifest"})
-                await broadcast({"type": "manifest_data", "data": manifest_res.get("data")})
+        # Check if this is a group chat (>1 participant) with no explicit pings
+        _conv_participants: list = []
+        if selene and selene.active_conversation_id:
+            _conv_participants = selene.get_participants(selene.active_conversation_id) or []
+        _is_group = len(_conv_participants) > 1
+        _origin_slug = getattr(selene, "active_agent_slug", "selene") if selene else "selene"
 
-        if target_agent:
-            _slug_pat = "|".join(_PING_MAP.keys())
+        # Build the list of agents that will respond this turn:
+        #   - Explicit pings → respond in mention order
+        #   - Group chat, no pings → all participants respond in succession
+        #   - Single agent / no pings → normal path (empty list, falls through below)
+        _respond_slugs: list[str] = []
+        if _pinged_slugs:
+            _respond_slugs = _pinged_slugs
+        elif _is_group:
+            _respond_slugs = list(_conv_participants)
+
+        # Strip @mentions from the message the agents will see
+        if _slug_pat:
             user_input = re.sub(rf'@(?:{_slug_pat})\b', '', user_input, flags=re.IGNORECASE).strip()
+
+        # ── Multi-agent response loop ──────────────────────────────────────────
+        if _respond_slugs and selene:
+            # Common pre-work: create conv, log user turn once
+            if selene.active_conversation_id is None:
+                await loop.run_in_executor(None, selene.new_conversation)
+            _ms_session = selene.active_conversation_id or "default"
+            await loop.run_in_executor(
+                None, selene.db.log_dialog, _ms_session, "user", user_input, "", "sent"
+            )
+            set_last_message_status(_ms_session, "read")
+            await websocket.send_json({"type": "read_receipt", "status": "read"})
+
+            _is_first_msg = (len(selene.working_memory) == 0 and selene.active_conversation_name == "New Conversation")
+
+            for _resp_slug in _respond_slugs:
+                # Only swap if not already on this agent
+                _current_slug = getattr(selene, "active_agent_slug", None)
+                if _current_slug != _resp_slug:
+                    try:
+                        await loop.run_in_executor(None, selene.swap_agent, _resp_slug)
+                    except Exception as _sw_err:
+                        print(f"[Ping]: swap to {_resp_slug} failed — {_sw_err}")
+                        continue
+
+                _agent_label = getattr(selene, "active_agent_name", _resp_slug).lower()
+                await websocket.send_json({"type": "thinking", "agent": _agent_label})
+
+                def _make_thought_cb(_lbl=_agent_label):
+                    def _cb(step, title, content):
+                        asyncio.run_coroutine_threadsafe(
+                            websocket.send_json({"type": "thought", "step": step, "title": title,
+                                                 "content": content, "agent": _lbl}),
+                            loop
+                        )
+                    return _cb
+                selene.thought_callback = _make_thought_cb()
+
+                # Presence layer
+                try:
+                    _gate_res = await loop.run_in_executor(None, selene.run_choice_layer, user_input)
+                    _gate = _gate_res.get("gating", "RESPOND")
+                    _rmode = _gate_res.get("response_mode", "CONVERSATIONAL")
+                except Exception:
+                    _gate, _rmode = "RESPOND", "CONVERSATIONAL"
+
+                if _gate == "IGNORE":
+                    await websocket.send_json({"type": "read_receipt", "status": "ignored", "agent": _agent_label})
+                    continue
+
+                # Generate response
+                try:
+                    _resp = await loop.run_in_executor(
+                        None, lambda: process_message(user_input, response_mode=_rmode)
+                    )
+                except Exception as _exc:
+                    await websocket.send_json({"type": "response",
+                                               "content": f"[{_agent_label} error]: {_exc}",
+                                               "agent": _agent_label})
+                    continue
+                finally:
+                    selene.thought_callback = None
+
+                _cleaned = clean_xml_tags(_resp)
+                await websocket.send_json({"type": "response", "content": _cleaned, "agent": _agent_label})
+                update_memory_and_energy(user_input, _resp, response_mode=_rmode)
+
+            # Swap back to origin agent
+            if selene.active_agent_slug != _origin_slug:
+                try:
+                    await loop.run_in_executor(None, selene.swap_agent, _origin_slug)
+                except Exception:
+                    pass
+
+            # Auto-name conversation
+            if _is_first_msg and selene.active_conversation_id:
+                _cid = selene.active_conversation_id
+                _auto = selene.auto_name_from_message(user_input)
+                selene.rename_conversation(_cid, _auto)
+                await websocket.send_json({"type": "conversation_renamed", "id": _cid, "name": _auto})
+
+            await loop.run_in_executor(None, selene.save_current_conversation)
+            await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
+            await broadcast({"type": "state", "data": get_state()})
+            return True
 
         # Auto-create conversation on clean boot
         if selene and selene.active_conversation_id is None:
             await loop.run_in_executor(None, selene.new_conversation)
-
         is_first_message = (
             selene is not None
             and len(selene.working_memory) == 0
             and selene.active_conversation_name == "New Conversation"
         )
-
         session_id = selene.active_conversation_id or "default" if selene else "default"
         if selene:
             await loop.run_in_executor(
@@ -447,4 +534,5 @@ async def handle(websocket, data: dict, loop) -> bool:
             })
             print("[Selene Server]: Memory cleared by UI (legacy).")
         await websocket.send_json({"type": "state", "data": get_state()})
-     
+        return True
+    return False

@@ -19,6 +19,7 @@ import json
 import os
 import time
 from typing import Any, Dict, Optional
+from server.roster import agent_has_cap, default_agent_slug as _roster_default
 
 from .schema import BaseTool
 
@@ -50,8 +51,8 @@ class MetaInsightTool(BaseTool):
     @property
     def _agent_name(self) -> str:
         if self.agent_state:
-            return getattr(self.agent_state, "active_agent_name", "selene").lower()
-        return "selene"
+            return getattr(self.agent_state, "active_agent_name", _roster_default()).lower()
+        return _roster_default()
 
     def execute(self, input_data: Any) -> Dict[str, Any]:
         db = self._db
@@ -81,11 +82,11 @@ class MetaInsightTool(BaseTool):
             time_window  = args.get("time_window_hours")
             time_window  = float(time_window) if time_window is not None else None
 
-            # If caller is Sage, apply access gate
-            is_sage      = self._agent_name == "sage"
+            # Apply cross-agent access gate for agents with grant_access capability
+            is_sage      = agent_has_cap(self._agent_name, "grant_access")
 
             entries = db.query_meta_insight(
-                agent=args.get("agent"),      # None = all agents; "selene" = only Selene's
+                agent=args.get("agent"),      # None = all agents; use default agent slug for primary
                 category=category,
                 subcategory=subcategory,
                 keyword=keyword,
@@ -110,10 +111,10 @@ class MetaInsightTool(BaseTool):
             time_window   = float(args.get("time_window_hours", 168.0))
             min_conf      = float(args.get("min_confidence", 0.0))
 
-            # Sage can only pattern-analyse its own logs + Selene's accessible ones
-            # For pattern mode we run on the target agent's logs
-            if self._agent_name == "sage" and target_agent == "selene":
-                # Allowed — Sage seeing Selene's accessible logs — but note it in result
+            # grant_access agents can pattern-analyse the default agent's accessible logs
+            _default = _roster_default()
+            if agent_has_cap(self._agent_name, "grant_access") and target_agent == _default:
+                # Allowed — seeing default agent's accessible logs — but note it in result
                 result = db.pattern_mode_meta_insight(
                     agent=target_agent,
                     category=category,
@@ -137,9 +138,10 @@ class MetaInsightTool(BaseTool):
 
         # ── grant_sage ────────────────────────────────────────────────────────
         elif command == "grant_sage":
-            # Only Selene can grant Sage access to her own logs
-            if self._agent_name != "selene":
-                return {"status": "error", "message": "Only Selene can grant Sage access to her logs."}
+            # Only the default boot agent can grant cross-agent log access
+            _default = _roster_default()
+            if self._agent_name != _default:
+                return {"status": "error", "message": f"Only {_default.capitalize()} can grant cross-agent log access."}
 
             entry_ids = args.get("entry_ids", [])
             if not entry_ids:
@@ -147,7 +149,7 @@ class MetaInsightTool(BaseTool):
                 category = args.get("category")
                 limit    = min(int(args.get("limit", 10)), 50)
                 entries  = db.query_meta_insight(
-                    agent="selene", category=category, limit=limit
+                    agent=_default, category=category, limit=limit
                 )
                 entry_ids = [e["id"] for e in entries]
 
@@ -165,8 +167,9 @@ class MetaInsightTool(BaseTool):
 
         # ── revoke_sage ───────────────────────────────────────────────────────
         elif command == "revoke_sage":
-            if self._agent_name != "selene":
-                return {"status": "error", "message": "Only Selene can revoke Sage access."}
+            _default = _roster_default()
+            if self._agent_name != _default:
+                return {"status": "error", "message": f"Only {_default.capitalize()} can revoke cross-agent log access."}
 
             entry_ids = args.get("entry_ids", [])
             count = 0

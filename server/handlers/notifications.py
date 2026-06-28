@@ -31,7 +31,7 @@ def _save(notifications: list) -> None:
         json.dump(notifications, f, indent=2, ensure_ascii=False)
 
 
-def add_notification(title: str, body: str, page: str = None,
+def add_notification(title: str, body: str, page: "str | None" = None,
                      source_agent: str = "system") -> dict:
     """Write a notification and broadcast it to all connected clients."""
     notif = {

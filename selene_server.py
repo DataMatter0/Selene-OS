@@ -363,38 +363,48 @@ async def websocket_endpoint(websocket: WebSocket):
             msg_type = data.get("type", "")
 
             # Dispatch through domain handlers (first match wins)
-            if await _h_chat.handle(websocket, data, loop):
-                continue
-            if await _h_conv.handle(websocket, data, loop):
-                continue
-            if await _h_mem.handle(websocket, data, loop):
-                continue
-            if await _h_manifest.handle(websocket, data, loop):
-                continue
-            if await _h_knowledge.handle(websocket, data, loop):
-                continue
-            if await _h_system.handle(websocket, data, loop):
-                continue
-            if await _h_steam.handle(websocket, data, loop):
-                continue
-            if await _h_youtube.handle(websocket, data, loop, yt_state):
-                continue
-            if await _h_story.handle(websocket, data, loop):
-                continue
-            if await _h_notif.handle(websocket, data, loop):
-                continue
-            if await _h_misc.handle(websocket, data, loop):
-                continue
-
-            # Catch-all
-            await websocket.send_json({"type": "error", "message": f"Unknown message type: {msg_type}"})
+            try:
+                if await _h_chat.handle(websocket, data, loop):
+                    continue
+                if await _h_conv.handle(websocket, data, loop):
+                    continue
+                if await _h_mem.handle(websocket, data, loop):
+                    continue
+                if await _h_manifest.handle(websocket, data, loop):
+                    continue
+                if await _h_knowledge.handle(websocket, data, loop):
+                    continue
+                if await _h_system.handle(websocket, data, loop):
+                    continue
+                if await _h_steam.handle(websocket, data, loop):
+                    continue
+                if await _h_youtube.handle(websocket, data, loop, yt_state):
+                    continue
+                if await _h_story.handle(websocket, data, loop):
+                    continue
+                if await _h_notif.handle(websocket, data, loop):
+                    continue
+                if await _h_misc.handle(websocket, data, loop):
+                    continue
+                # Catch-all
+                await websocket.send_json({"type": "error", "message": f"Unknown message type: {msg_type}"})
+            except Exception as _dispatch_exc:
+                import traceback
+                print(f"[Selene Server]: Handler error on '{msg_type}' — {_dispatch_exc}")
+                traceback.print_exc()
+                try:
+                    await websocket.send_json({"type": "error", "message": f"Server error: {_dispatch_exc}"})
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
         clients.discard(websocket)
         print(f"[Selene Server]: UI disconnected  ({len(clients)} client(s))")
     except Exception as exc:
+        import traceback
         clients.discard(websocket)
         print(f"[Selene Server]: Client error — {exc}")
+        traceback.print_exc()
 
 
 # -- Entry point ---------------------------------------------------------------

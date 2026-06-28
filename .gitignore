@@ -111,3 +111,8 @@ desktop.ini
 agents/*/memory.db
 agents/*/prompt.txt
 agents/*/soul.md
+agents/*/manifest_state.json
+agents/shared/
+
+# Shared agent runtime state
+agents/shared/

@@ -3,8 +3,8 @@
   "title": "The Pharaoh",
   "domain": "Backend Development, Systems Architecture, APIs, and Infrastructure",
   "model": "mistralai.ministral-8b-instruct-2410",
-  "color_primary": "#1c1917",
-  "color_secondary": "#f59e0b",
+  "color_primary": "#f59e0b",
+  "color_secondary": "#1c1917",
   "color_text": "#fef3c7",
   "tools": [
     "file_manager",
@@ -23,5 +23,11 @@
   "insights": "insights.md",
   "manifest_state": "manifest_state.json",
   "notion_page_id": "yami_core_page",
-  "model_path": "mistralai.ministral-8b-instruct-2410"
+  "model_path": "mistralai.ministral-8b-instruct-2410",
+  "color_glow": "rgba(245,158,11,0.08)",
+  "role": "architect",
+  "capabilities": [
+    "agent_creation"
+  ],
+  "display_name": "Yami"
 }

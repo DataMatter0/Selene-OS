@@ -10,6 +10,7 @@ import time
 from server.config    import BASE_URL, _normalize
 from server.state     import get_state, broadcast, clients
 from server.startup   import global_guide_button
+from server.roster    import get_roster, reload_roster, default_agent_slug
 import server.state   as _st
 import server.startup as _startup
 
@@ -76,6 +77,16 @@ async def handle(websocket, data: dict, loop) -> bool:
         await websocket.send_json({"type": "state", "data": get_state()})
         return True
 
+    elif msg_type == "get_roster":
+        await websocket.send_json({"type": "roster", "data": get_roster()})
+        return True
+
+    elif msg_type == "reload_roster":
+        roster = reload_roster()
+        await websocket.send_json({"type": "roster", "data": roster})
+        await websocket.send_json({"type": "state",  "data": get_state()})
+        return True
+
     elif msg_type == "get_models":
         manager = LMStudioManager(base_url=BASE_URL)
         models  = await loop.run_in_executor(None, manager.list_models)
@@ -107,7 +118,7 @@ async def handle(websocket, data: dict, loop) -> bool:
         return True
 
     elif msg_type == "toggle_agent":
-        new_agent = data.get("agent", "selene").lower()
+        new_agent = data.get("agent", default_agent_slug()).lower()
         if not selene:
             return True
 
@@ -141,6 +152,9 @@ async def handle(websocket, data: dict, loop) -> bool:
             )
             if _already_ok:
                 print(f"[Selene Server]: Model '{target_model}' already loaded — skipping LM Studio swap.")
+                await broadcast({"type": "model_switch_status", "ok": True,
+                                 "status": "already_loaded", "agent": new_agent,
+                                 "model": target_model_path})
             else:
                 await broadcast({"type": "model_switch_status", "ok": None, "status": "switching", "agent": new_agent})
                 result = await _swap_model_on_lmstudio(manager, target_model_path, loop)
@@ -155,12 +169,41 @@ async def handle(websocket, data: dict, loop) -> bool:
                     return True  # Abort — don't swap identity to an unloaded model
         else:
             print(f"[Selene Server]: No model defined for '{new_agent}' — skipping model swap.")
+            await broadcast({"type": "model_switch_status", "ok": True,
+                             "status": "no_model", "agent": new_agent, "model": ""})
 
         # Swap identity, memory, prompt
         try:
             await loop.run_in_executor(None, selene.swap_agent, new_agent)
             await websocket.send_json({"type": "state",         "data": get_state()})
             await websocket.send_json({"type": "conversations", "data": selene.list_conversations()})
+            # Re-push manifest + memory for the newly active agent
+            _manifest_res = await loop.run_in_executor(
+                None,
+                lambda: selene.tool_router.route_and_execute("manifest_manager", {"command": "get_manifest"})
+            )
+            await websocket.send_json({"type": "manifest_data", "data": _manifest_res.get("data")})
+            # Re-push memory cards for the newly active agent
+            import datetime as _dt
+            _today     = _dt.date.today().isoformat()
+            _soul_path = getattr(selene, "prompt_path", None) or getattr(selene, "SOUL_FILE", "")
+            try:
+                _row      = selene.db.get_daily_manifest(_today)
+                _manifest = (_row.get("summary", "") if _row else "") or ""
+            except Exception:
+                _manifest = ""
+            await websocket.send_json({
+                "type": "memory_files",
+                "data": {
+                    "soul":              selene._read_file_safe(_soul_path),
+                    "tools_context":     selene._read_file_safe(getattr(selene, "TOOLS_CONTEXT_FILE", "")),
+                    "user_profile":      selene._read_file_safe(getattr(selene, "USER_PROFILE_FILE",  "")),
+                    "character_profile": selene._read_file_safe(getattr(selene, "CHARACTER_PROFILE_FILE", "")),
+                    "manifest":          _manifest,
+                    "agent_name":        getattr(selene, "active_agent_name", "Selene"),
+                    "agent_slug":        getattr(selene, "active_agent_slug",  new_agent),
+                },
+            })
             print(f"[Selene Server]: Swapped active agent to '{new_agent}'.")
         except Exception as exc:
             import traceback; traceback.print_exc()

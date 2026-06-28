@@ -17,6 +17,7 @@ import re
 import shutil
 import time
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from server.roster import agent_has_cap, agents_with_cap
 
 from .schema import BaseTool
 
@@ -106,7 +107,7 @@ class ManifestTool(BaseTool):
     def read_guidelines(self) -> str:
         active_agent = getattr(self.agent_state, "active_agent_name", "Selene").lower()
         guidelines_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_prioritization_guidelines.md")
-        if not os.path.exists(guidelines_path) and active_agent == "sage":
+        if not os.path.exists(guidelines_path) and agent_has_cap(active_agent, "dev_manifest"):
             legacy_path = os.path.join(self.agent_state.MEMORY_DIR, "prioritization_guidelines.md")
             if os.path.exists(legacy_path):
                 guidelines_path = legacy_path
@@ -115,7 +116,7 @@ class ManifestTool(BaseTool):
     def read_build_context(self) -> str:
         active_agent = getattr(self.agent_state, "active_agent_name", "Selene").lower()
         context_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_build_context.md")
-        if not os.path.exists(context_path) and active_agent == "sage":
+        if not os.path.exists(context_path) and agent_has_cap(active_agent, "dev_manifest"):
             legacy_path = os.path.join(self.agent_state.MEMORY_DIR, "build_context.md")
             if os.path.exists(legacy_path):
                 context_path = legacy_path
@@ -346,11 +347,12 @@ class ManifestTool(BaseTool):
 
         _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        # Load all agent configs except sage
+        # Load all agents that don't have idea_routing capability (they route, not receive)
+        _idea_routers = {a["slug"] for a in agents_with_cap("idea_routing")}
         agents_info = []
         for cfg_path in _glob.glob(os.path.join(_root, "agents", "*", "config.json")):
             slug = os.path.basename(os.path.dirname(cfg_path))
-            if slug == "sage":
+            if slug in _idea_routers:
                 continue
             try:
                 with open(cfg_path, "r", encoding="utf-8") as _f:
@@ -465,8 +467,8 @@ class ManifestTool(BaseTool):
             print(f"[ManifestTool] idea LLM parse failed: {e} — saving raw text")
             data = {"title": text[:80].strip(), "summary": text.strip(), "tags": []}
 
-        # Sage routing intercept — only if Sage is active
-        if agent_slug == "sage":
+        # Routing intercept — only for agents with idea_routing capability
+        if agent_has_cap(agent_slug, "idea_routing"):
             suggestion = self.route_idea_suggestion(data)
             if suggestion and suggestion.get("confidence") == "high":
                 return {
@@ -525,7 +527,7 @@ class ManifestTool(BaseTool):
             "summary":    distilled.get("summary", "").strip(),
             "tags":       distilled.get("tags", []),
             "agent":      target_slug,
-            "routed_by":  "sage",
+            "routed_by":  agent_slug,
             "status":     "sketch",
             "task_id":    None,
             "created_at": time.strftime("%Y-%m-%d %H:%M"),
@@ -879,9 +881,9 @@ class ManifestTool(BaseTool):
         Preserves existing ideas unless explicitly passed.
         """
         caller = getattr(self.agent_state, "active_agent_slug", "unknown").lower()
-        if caller != "sage":
+        if not agent_has_cap(caller, "write_agent_manifest"):
             raise PermissionError(
-                f"write_agent_manifest is restricted to Sage. Current agent: {caller}"
+                f"write_agent_manifest requires 'write_agent_manifest' capability. Current agent: {caller}"
             )
         _root       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target_path = os.path.join(_root, "agents", target_slug, "manifest_state.json")
@@ -912,8 +914,8 @@ class ManifestTool(BaseTool):
         Sage-gated.
         """
         caller = getattr(self.agent_state, "active_agent_slug", "unknown").lower()
-        if caller != "sage":
-            return f"reorganize_agent_manifest is restricted to Sage. Current agent: {caller}"
+        if not agent_has_cap(caller, "write_agent_manifest"):
+            return f"reorganize_agent_manifest requires 'write_agent_manifest' capability. Current agent: {caller}"
 
         _root       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target_path = os.path.join(_root, "agents", target_slug, "manifest_state.json")
@@ -1348,14 +1350,14 @@ class ManifestTool(BaseTool):
             guidelines   = self.read_guidelines()
 
             dev_manifest_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_development_manifest.md")
-            if not os.path.exists(dev_manifest_path) and active_agent == "sage":
+            if not os.path.exists(dev_manifest_path) and agent_has_cap(active_agent, "dev_manifest"):
                 legacy = os.path.join(self.agent_state.MEMORY_DIR, "development_manifest.md")
                 if os.path.exists(legacy):
                     dev_manifest_path = legacy
             dev_manifest = self.agent_state._read_file_safe(dev_manifest_path)
 
             phil_manifest_path = os.path.join(self.agent_state.MEMORY_DIR, f"{active_agent}_philosophy_manifest.md")
-            if not os.path.exists(phil_manifest_path) and active_agent == "sage":
+            if not os.path.exists(phil_manifest_path) and agent_has_cap(active_agent, "dev_manifest"):
                 legacy = os.path.join(self.agent_state.MEMORY_DIR, "philosophy_manifest.md")
                 if os.path.exists(legacy):
                     phil_manifest_path = legacy
