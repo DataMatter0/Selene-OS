@@ -57,6 +57,7 @@ selene_brain/lip_sync.py
 SKILLS_PROFILE.md
 SKILLS_PROFILE_UNIFIED.md
 SKILLS_ADDENDUM_UNITY_VRM.md
+CODEBASE.md
 
 # ── Excluded modules (private / in development) ───────────────────────────────
 container.py

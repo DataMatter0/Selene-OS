@@ -390,8 +390,52 @@ No other system file needs to change. Frontend adapts automatically on next WS s
 
 ---
 
-## Unreleased
+## [v0.9] 2026-06-28 — Multi-Agent Ping, Emotion Tab, Bug Fixes, Cleanup
 
-_Track in-progress work here. Move to a versioned block when committing._
+### Added
+
+**Multi-agent ping system (full rewrite)**
+- `@mention` parsing collects ALL slugs from a single message in order — `@Sage @Akari` triggers both in sequence
+- Each pinged agent: swap config → presence gate → respond → tag response with agent name → swap to next
+- After all pings complete, swaps back to origin agent (whoever was active when message arrived)
+- Group conversations (agents added via `/invite`): all participants respond in succession when no explicit `@` ping is used
+- Explicit pings in group chats override the succession order — only named agents respond
+- Skip-swap optimization: if the next agent in the sequence is already active (same slug), `swap_agent` is skipped
+- User message logged once; each agent response tagged with `"agent"` field on the WS message
+
+**Emotion tab in MetaInsightView**
+- `run_emotion_and_insight` now logs a dedicated `category="emotion"` entry per turn alongside the existing `category="output"` entry
+- Subcategory is the emotional arc: `"curious → content"`, intensity as confidence score, shift magnitude in reasoning field
+- EMOTION tab in MetaInsightView now populates from real data
+
+### Fixed
+
+- **Critical: `return True` at wrong indentation in `chat.py`** — stray `return True` was outside the `if is_keep or is_yes or _named_agent` block but inside `if pending_idea_routing`. Fired after every single chat message, short-circuiting before the presence layer or LLM were ever reached. Every agent appeared to receive messages (typing indicator) but never responded.
+- **`llm_chat.py` truncation** — file was truncated at `if __name__ ==` with no continuation. Python ran stale `.pyc` from before truncation, masking the SyntaxError. Fixed by completing the `if __name__ == "__main__": main()` block and clearing `.pyc` cache.
+- **Wrong model name** — `agents/selene/config.json` and `agents/sage/config.json` had `"model": "Selene/Sage"` (a legacy LM Studio display name). Updated to `"google/gemma-3n-e4b"` to match the actual loaded model identifier.
+- `notifications.py` type annotation — `page: "str | None" = None` (string-quoted for Python 3.9 compat)
+- `tools/schedule.py` — `state_file` converted to `@property` to avoid accessing `MEMORY_DIR` at `__init__` time before `swap_agent` sets paths
+- `server/handlers/system.py` — `default_agent_slug` was missing from roster import, causing `NameError` on boot when no saved state existed
+- Debug step-prints (`[Chat]: step 1`, etc.) removed from `chat.py`
+
+### Changed
+
+- `.gitignore` — added `agents/*/manifest_state.json` and `agents/shared/` (runtime data, should never be tracked)
+- Deleted stale root-level docs: `RESTRUCTURE_PLAN.md` (restructure complete), `SELENE_INNER_STATE_FEATURE.md` (superseded by meta_insight reasoning), `SKILLS_PROFILE*.md`, `SKILLS_ADDENDUM_UNITY_VRM.md`
+- Deleted superseded configs: `configs/sage_config.json`, `configs/selene_config.json` (replaced by `agents/*/config.json`)
+- Deleted dead dormant modules: `selene_brain/dormant/curator.py`, `selene_brain/dormant/subdirectory_hints.py` (foreign codebase, zero relation to Selene)
+- Deleted leftover log files and stale runtime JSONs from `memories/`
+- `README.md` — full rewrite reflecting current roster system, project structure, and setup flow
+- `CODEBASE.md` → `ARCHITECTURE.md` — renamed, updated with identity packet design spec and v0.9 roadmap
+
+### Safe to commit
+- `server/handlers/chat.py`, `server/roster.py`
+- `selene_brain/llm_chat.py`, `tools/meta_insight.py`, `tools/schedule.py`
+- `server/handlers/system.py`, `server/handlers/notifications.py`
+- `agents/selene/config.json`, `agents/sage/config.json`
+- `README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `.gitignore`
+- Do NOT commit: `.env`, `agents/*/memory.db`, `agents/*/prompt.txt`, `agents/*/soul.md`, `agents/*/manifest_state.json`, `agents/shared/`, `memories/`, `conversations/`, `selene_state.json`
+
+---
 
 
