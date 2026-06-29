@@ -14,7 +14,7 @@ from server.roster    import get_roster, reload_roster, default_agent_slug
 import server.state   as _st
 import server.startup as _startup
 
-from selene_brain import LMStudioManager
+from pantheon_brain import LMStudioManager
 
 _AGENTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "agents")
 

@@ -21,7 +21,7 @@ load_dotenv()
 # Get the directory of the current script's parent (the project root) to make file paths absolute
 _BRAIN_DIR         = os.path.dirname(os.path.abspath(__file__))
 _SCRIPT_DIR        = os.path.dirname(_BRAIN_DIR) # project root
-_STATE_FILE        = os.path.join(_SCRIPT_DIR, "selene_state.json")
+_STATE_FILE        = os.path.join(_SCRIPT_DIR, "pantheon_state.json")
 _CONVERSATIONS_DIR = os.path.join(_SCRIPT_DIR, "conversations")
 _AGENTS_DIR         = os.path.join(_SCRIPT_DIR, "agents")
 _SOUL_FILE          = os.path.join(_SCRIPT_DIR, "configs", "soul.md")  # legacy, unused by agents
@@ -156,7 +156,7 @@ class LLMChat(PromptBuilderMixin, ConversationManagerMixin, MemoryExtractorMixin
             self._refresh_system_prompt()
 
             try:
-                from selene_brain.tool_suggestion import ToolSuggestionLayer
+                from pantheon_brain.tool_suggestion import ToolSuggestionLayer
                 setattr(self, "tool_suggestion", ToolSuggestionLayer(self))
                 setattr(self, "pending_tool_confirmation", None)
             except Exception as _tse:

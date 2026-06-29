@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from .config  import BASE_URL
 from .state   import set_selene, broadcast, get_state, _state_broadcaster, clients
 from .roster  import reload_roster, default_agent_slug
-from selene_brain import LLMChat, LMStudioManager
+from pantheon_brain import LLMChat, LMStudioManager
 
 
 global_guide_button: int = 16
@@ -159,7 +159,7 @@ def _init_selene() -> None:
                     )
         setattr(k_tool, "on_state_change", handle_change)
 
-    from selene_brain.tool_suggestion import ToolSuggestionLayer
+    from pantheon_brain.tool_suggestion import ToolSuggestionLayer
     setattr(selene, "tool_suggestion",           ToolSuggestionLayer(selene))
     setattr(selene, "pending_tool_confirmation", None)
     print("[Selene Server]: ToolSuggestionLayer initialised.")

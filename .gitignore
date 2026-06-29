@@ -11,7 +11,7 @@ configs/sage_tools_context.md
 configs/selene_tools_context.md
 memories/
 conversations/
-selene_state.json
+pantheon_state.json
 notes/
 manifest
 selene_matrix.txt
@@ -49,9 +49,9 @@ tools/workspace.py
 selene_discord.py
 scratch/
 tools/Experiments/
-selene_brain/dormant/
-selene_brain/story_engine.py
-selene_brain/lip_sync.py
+pantheon_brain/dormant/
+pantheon_brain/story_engine.py
+pantheon_brain/lip_sync.py
 
 # ── Redundant / draft docs ────────────────────────────────────────────────────
 SKILLS_PROFILE.md
@@ -97,6 +97,9 @@ release/
 *.exe
 *.msi
 
+# ── LM Studio model cache (should not be in project root) ────────────────────
+models/
+
 # ── SQLite databases ──────────────────────────────────────────────────────────
 *.db
 *.sqlite
@@ -115,5 +118,3 @@ agents/*/soul.md
 agents/*/manifest_state.json
 agents/shared/
 
-# Shared agent runtime state
-agents/shared/

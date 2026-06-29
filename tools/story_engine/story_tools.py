@@ -217,7 +217,7 @@ class StoryOpenMerchantTool(BaseTool):
         world_level = int(input_data.get("world_level", 1))
 
         # Import dynamically from core engine to prevent circular import locks
-        from selene_brain.story_engine import InfiniteStoryEngine
+        from pantheon_brain.story_engine import InfiniteStoryEngine
         engine = InfiniteStoryEngine()
         
         try:

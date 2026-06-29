@@ -7,7 +7,7 @@ This document explains *why* the code is structured the way it is, and where it'
 ## Package map
 
 ```
-selene_brain/    Core agent runtime — LLM calls, memory, presence, prompting
+pantheon_brain/    Core agent runtime — LLM calls, memory, presence, prompting
 tools/           Tool plugins — one file per tool, loaded at startup via registry
 server/          WebSocket + REST server — one file per domain concern
 selene_server.py Thin entry point (~400 lines) — app wiring + WS dispatcher
@@ -16,7 +16,7 @@ agents/          Self-contained agent folders — config, profiles, memory (per-
 
 ---
 
-## selene_brain/
+## pantheon_brain/
 
 The agent runtime. Everything inside here is agent-centric — it only knows about the model, memory, and conversation state. It has no FastAPI imports and no WebSocket handling.
 
@@ -203,7 +203,7 @@ agents/*/manifest_state.json  Runtime task state
 agents/shared/             Cross-agent runtime data
 memories/                  Extracted long-term memory files
 conversations/             Saved conversation JSON
-selene_state.json          Runtime state snapshot
+pantheon_state.json          Runtime state snapshot
 ```
 
 ---
@@ -222,7 +222,7 @@ Currently `swap_agent()` sets ~12 separate properties on `self` (`active_agent_n
 
 ### Solution: `AgentIdentity` dataclass
 
-Define in `selene_brain/agent_protocol.py` (already exists as a Protocol — extend it):
+Define in `pantheon_brain/agent_protocol.py` (already exists as a Protocol — extend it):
 
 ```python
 from dataclasses import dataclass, field
@@ -317,11 +317,11 @@ Each agent maintains a rolling window of their own reasoning — not dialogue, n
 ### Surgical edit plan for v0.9
 
 **Step 1 — `AgentIdentity` dataclass** (no behavior change)
-- Add `AgentIdentity` to `selene_brain/agent_protocol.py`
+- Add `AgentIdentity` to `pantheon_brain/agent_protocol.py`
 - Add `AgentIdentity.from_config(slug, config)` factory classmethod
 - Update `swap_agent` to construct `self.identity` and set shim properties
 - Add `identity` property to `BaseTool`
-- **Files:** `selene_brain/agent_protocol.py`, `selene_brain/llm_chat.py`, `tools/schema.py`
+- **Files:** `pantheon_brain/agent_protocol.py`, `pantheon_brain/llm_chat.py`, `tools/schema.py`
 - **Test:** boot, swap agents, verify all tools still work
 
 **Step 2 — Migrate tool identity lookups** (cosmetic, gradual)
@@ -331,13 +331,13 @@ Each agent maintains a rolling window of their own reasoning — not dialogue, n
 
 **Step 3 — Reasoning chain logging**
 - In `run_emotion_and_insight` (in `llm_chat.py`), extract `<think>` block from `_reasoning_snap` and log as `category="reasoning"` entry
-- **Files:** `selene_brain/llm_chat.py`
+- **Files:** `pantheon_brain/llm_chat.py`
 - **Test:** check `meta_insight` REASONING category populates in MetaInsightView
 
 **Step 4 — Reasoning chain prompt injection**
 - In `prompter.py` `_build_system_prompt()`, query last 5 `category="reasoning"` entries for active agent
 - Inject as `YOUR RECENT TRAIN OF THOUGHT` block between soul anchor and memory profiles
-- **Files:** `selene_brain/prompter.py`, `selene_brain/agent_memory.py` (ensure query method supports category filter)
+- **Files:** `pantheon_brain/prompter.py`, `pantheon_brain/agent_memory.py` (ensure query method supports category filter)
 - **Test:** verify injected block appears in system prompt, verify no prompt length explosion
 
 **Step 5 — First-person reasoning instruction**
@@ -354,11 +354,117 @@ Each agent maintains a rolling window of their own reasoning — not dialogue, n
 
 ---
 
+---
+
+## Data migration — `memories/` cleanup (do before v0.9)
+
+The `memories/` folder is gitignored legacy content from before the per-agent folder system existed. It contains real data that should be migrated before deleting. Do this manually — it's personal content, not code.
+
+### What to migrate and where
+
+| `memories/` file | Migrate to | Notes |
+|---|---|---|
+| `character_profile.md` | `agents/selene/character_profile.md` | Merge with existing stub — keep the richer content |
+| `sage_character_profile.md` | `agents/sage/character_profile.md` | Same |
+| `user_profile.md` | `agents/selene/user_profile.md` | Merge |
+| `sage_user_profile.md` | `agents/sage/user_profile.md` | Merge |
+| `tools_context.md` | `agents/selene/tools_context.md` | Merge |
+| `selene_insights.md` | `agents/selene/insights.md` | Append — insights are additive |
+| `selene_notes.md` | `agents/selene/insights.md` | Append anything still relevant |
+
+### What to delete (no migration needed)
+
+| File | Reason |
+|---|---|
+| `memories/development_manifest.md` | Superseded by manifest tool + `agents/*/manifest_state.json` |
+| `memories/philosophy_manifest.md` | Superseded |
+| `memories/prioritization_guidelines.md` | Superseded |
+| `memories/build_context.md` | Superseded by `ARCHITECTURE.md` |
+| `memories/world_knowledge.md` | Move to knowledge board via the tool, not a flat file |
+| `memories/sage_memory.db` | Dead copy — live DB is `agents/sage/memory.db` |
+| `memories/selene_memory.db` | Dead copy — live DB is `agents/selene/memory.db` |
+| `memories/manifest_state.json` | Dead copy |
+| `memories/sage_manifest_state.json` | Dead copy |
+| `memories/selene_manifest_state.json` | Dead copy |
+| `memories/knowledge_board_state.json` | Dead copy — live is `agents/shared/knowledge_board_state.json` |
+| `memories/runereader_notes/` | Generated synthesis output, not source data |
+| `memories/story_engine/story_engine.db` | Verify the live story DB path in `pantheon_brain/story_engine.py` first — if it reads from here, update the path to `agents/shared/story_engine.db` and move the file |
+
+### After migration
+
+Once content is merged into `agents/*/`, the `memories/` folder can be emptied. It stays in `.gitignore` so any new runtime files written there won't be tracked. Nothing in Python currently reads from `memories/` — all paths resolve through `self.MEMORY_DIR` (which is `agents/{slug}/`) after the v0.5 migration.
+
+**Verify before deleting:** grep for `memories/` in `*.py` to confirm nothing still hardcodes that path.
+
+```cmd
+grep -r "memories/" pantheon_brain/ server/ tools/ selene_server.py
+```
+
+If any hits come back that aren't comments, fix the path reference before deleting the file.
+
+---
+
+## Other cleanup before v0.9
+
+**`models/` at project root** — LM Studio model cache that landed in the wrong place. Added to `.gitignore`. Never commit.
+
+**`pantheon_state.json`** — OS-level runtime state: `creative_energy`, `last_conversation_id`, `active_agent`, `agent_layouts` (dashboard slot config per agent). This is intentionally a single shared file — it tracks the state of the OS session, not any individual agent. Already gitignored. Path is hardcoded in `pantheon_brain/llm_chat.py` as `_SCRIPT_DIR/pantheon_state.json` (project root). Keep as-is. Regenerates on boot if deleted.
+
+**`CODEBASE.md`** — replaced by `ARCHITECTURE.md`. Added to `.gitignore`. Run `git rm --cached CODEBASE.md` to remove from index.
+
+**`dataset/`** — private fine-tuning conversations (`.jsonl`). Already gitignored. Never stage.
+
+**`conversations/`** — private session JSON. Already gitignored. Never stage.
+
+**`selene_discord.py`** — gitignored (personal config). Low priority — could move to `server/discord.py` eventually.
+
+---
+
+## `pantheon_brain/` rename → `agent_runtime/`
+
+**Why:** `pantheon_brain` encodes a specific agent name into the package that runs all agents. The package contains the runtime for the entire Pantheon — LLM calling, memory, presence, prompting, conversation management. `agent_runtime` is accurate and agent-neutral.
+
+**Scope — exactly 11 import lines to update:**
+
+| File | Current import |
+|---|---|
+| `server/startup.py` | `from pantheon_brain import LLMChat, LMStudioManager` |
+| `server/startup.py` | `from pantheon_brain.tool_suggestion import ToolSuggestionLayer` |
+| `server/handlers/system.py` | `from pantheon_brain import LMStudioManager` |
+| `server/handlers/story.py` | `from pantheon_brain.story_engine import InfiniteStoryEngine` (×4) |
+| `tools/manifest.py` | `from pantheon_brain.agent_protocol import AgentState` |
+| `tools/memory_tool.py` | `from pantheon_brain.agent_protocol import AgentState` |
+| `tools/status.py` | `from pantheon_brain.agent_protocol import AgentState` |
+| `tools/todo.py` | `from pantheon_brain.agent_protocol import AgentState` |
+| `tools/story_engine/story_tools.py` | `from pantheon_brain.story_engine import InfiniteStoryEngine` |
+
+**Steps:**
+1. Rename folder: `pantheon_brain/` → `agent_runtime/`
+2. Update all 11 import lines: `pantheon_brain` → `agent_runtime`
+3. Delete `pantheon_brain/__pycache__/` if present
+4. Commit: `refactor: rename pantheon_brain to agent_runtime`
+
+**Nothing else changes** — no logic, no file moves within the package, no class renames. Pure find-and-replace on the package name.
+
+**CMD rename:**
+```cmd
+move "pantheon_brain" "agent_runtime"
+```
+Then update imports. Then clear pycache:
+```cmd
+rmdir /s /q agent_runtime\__pycache__ 2>nul
+```
+
+---
+
 ## Commit checklist for v0.9
 
 Before committing any v0.9 work:
 - `agents/*/manifest_state.json` is in `.gitignore` — verify `git status` doesn't show these
 - `agents/shared/` is in `.gitignore`
+- `models/` is in `.gitignore`
 - No `agents/*/prompt.txt` or `agents/*/soul.md` staged
 - `server/roster.py` is tracked (was untracked in v0.8)
-- No stale runtime JSONs from `memories/` staged
+- `CODEBASE.md` removed from git index (`git rm --cached CODEBASE.md`)
+- No files from `memories/`, `conversations/`, `dataset/` staged
+- Run `git status` and read every line before committing

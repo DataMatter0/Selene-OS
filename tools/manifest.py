@@ -22,7 +22,7 @@ from server.roster import agent_has_cap, agents_with_cap
 from .schema import BaseTool
 
 if TYPE_CHECKING:
-    from selene_brain.agent_protocol import AgentState
+    from pantheon_brain.agent_protocol import AgentState
 
 
 class ManifestTool(BaseTool):

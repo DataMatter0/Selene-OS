@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from .schema import BaseTool, atomic_write
 
 if TYPE_CHECKING:
-    from selene_brain.agent_protocol import AgentState
+    from pantheon_brain.agent_protocol import AgentState
 
 
 class TodoTool(BaseTool):

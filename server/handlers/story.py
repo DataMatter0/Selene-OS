@@ -119,7 +119,7 @@ async def handle(websocket, data: dict, loop) -> bool:
         return True
 
     elif msg_type == "story_create_character":
-        from selene_brain.story_engine import InfiniteStoryEngine
+        from pantheon_brain.story_engine import InfiniteStoryEngine
         profile_name  = data.get("profile_name", "").strip()
         char_name     = data.get("name", "").strip()
         char_class    = data.get("char_class", "Adventurer").strip()
@@ -297,7 +297,7 @@ RULES FOR STATS:
         if selene is None:
             return True
         from tools.story_engine.db_helper import get_db_connection
-        from selene_brain.story_engine    import InfiniteStoryEngine
+        from pantheon_brain.story_engine    import InfiniteStoryEngine
 
         char_id           = data.get("character_id")
         action_type       = data.get("action_type")
@@ -436,7 +436,7 @@ RULES FOR STATS:
 
     # -- MERCHANT ---------------------------------------------------------------
     elif msg_type == "story_merchant_inventory":
-        from selene_brain.story_engine import InfiniteStoryEngine
+        from pantheon_brain.story_engine import InfiniteStoryEngine
         location_name = data.get("location_name", "Origin Outpost")
         world_level   = int(data.get("world_level", 1))
         engine        = InfiniteStoryEngine()
@@ -476,7 +476,7 @@ RULES FOR STATS:
 
     # -- LEVELLING --------------------------------------------------------------
     elif msg_type == "story_level_up":
-        from selene_brain.story_engine import InfiniteStoryEngine
+        from pantheon_brain.story_engine import InfiniteStoryEngine
         char_id       = data.get("character_id")
         stat_to_boost = data.get("stat_to_boost")
         engine        = InfiniteStoryEngine()
